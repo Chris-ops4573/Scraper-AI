@@ -1,10 +1,15 @@
 from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
+from langchain.tools import tool
+from langchain.agents import initialize_agent, AgentType
+from langchain_openai import ChatOpenAI
+from database.userDatabase import router as user_router
 import os
 import requests
 from dotenv import load_dotenv
 import openai
 import uuid
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -12,12 +17,14 @@ load_dotenv()
 # Get API keys from .env
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
+OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
 # Initialize OpenAI client (v1 SDK)
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # Initialize FastAPI app
 app = FastAPI()
+app.include_router(user_router)
 
 # CORS middleware (allow frontend to access backend)
 app.add_middleware(
@@ -28,61 +35,72 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Brave Search function
-def search_brave(query):
+# --- LangChain Tools ---
+
+langchain_llm = ChatOpenAI(
+    api_key=OPENAI_API_KEY,
+    model="gpt-4o"
+)
+
+@tool
+def get_weather(city: str) -> str:
+    """Get current weather for a city using OpenWeatherMap."""
+    api_key = OPENWEATHER_API_KEY
+    if not api_key:
+        return "Weather API key not set."
+    url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
+    resp = requests.get(url)
+    if resp.status_code != 200:
+        return "Weather data not found."
+    data = resp.json()
+    desc = data['weather'][0]['description']
+    temp = data['main']['temp']
+    return f"Weather in {city}: {desc}, {temp}°C"
+
+@tool
+def brave_search(query: str) -> str:
+    """Search the web using Brave Search API."""
+    api_key = BRAVE_API_KEY
+    if not api_key:
+        return "Brave API key not set."
     url = "https://api.search.brave.com/res/v1/web/search"
-    headers = {"X-Subscription-Token": BRAVE_API_KEY}
-    params = {"q": query, "count": 5}
+    headers = {"X-Subscription-Token": api_key}
+    params = {"q": query, "count": 3}
+    resp = requests.get(url, headers=headers, params=params)
+    if resp.status_code != 200:
+        return "No search results."
+    data = resp.json()
+    results = data.get("web", {}).get("results", [])
+    if not results:
+        return "No search results."
+    return "\n".join([f"{r['title']}: {r['url']}" for r in results])
 
-    try:
-        response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        data = response.json()
+@tool
+def get_current_date() -> str:
+    """Returns today's date in YYYY-MM-DD format."""
+    return datetime.now().strftime("%Y-%m-%d")
 
-        if not data.get("web", {}).get("results"):
-            return "No web search results found."
+tools = [get_weather, brave_search, get_current_date]
+agent = initialize_agent(
+    tools,
+    langchain_llm,
+    agent=AgentType.OPENAI_FUNCTIONS,  # or STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION
+    verbose=True,
+)
 
-        results = []
-        for i, item in enumerate(data["web"]["results"], 1):
-            results.append(f"{i}. {item['title']}\n{item['url']}\n{item['description']}")
+# --- Endpoints ---
 
-        return "\n\n".join(results)
-
-    except Exception as e:
-        print("Brave API Error:", e)
-        return "No web search results found."
-
-# Text chat endpoint
 @app.post("/chat")
 async def chat(request: Request):
     data = await request.json()
     user_message = data.get("message")
-
-    web_results = search_brave(user_message)
-
-    system_prompt = (
-        f"You are a helpful VR Assistant for daily tasks. "
-        f"I have fetched these web search results for you:\n\n{web_results}\n\n"
-        "Use these results if they are helpful, otherwise answer using your general knowledge."
-    )
-
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
-            ]
-        )
-
-        reply = response.choices[0].message.content
+        reply = agent.run(user_message)
         return {"reply": reply}
-
     except Exception as e:
-        print("OpenAI API Error:", e)
+        print("LangChain Agent Error:", e)
         return {"reply": f"Error processing request: {e}"}
 
-# Voice chat endpoint (Windows-safe version)
 @app.post("/chat-voice")
 async def chat_voice(audio: UploadFile = File(...)):
     try:
@@ -109,25 +127,9 @@ async def chat_voice(audio: UploadFile = File(...)):
         # Delete temp file after transcription
         os.remove(safe_filename)
 
-        # Continue with Brave search and GPT
-        web_results = search_brave(transcribed_text)
-
-        system_prompt = (
-            f"You are a helpful VR Assistant for daily tasks. "
-            f"I have fetched these web search results for you:\n\n{web_results}\n\n"
-            "Use these results if they are helpful, otherwise answer using your general knowledge."
-        )
-
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": transcribed_text}
-            ]
-        )
-
-        reply = response.choices[0].message.content
-        return {"reply": reply}
+        # Use LangChain agent for the transcribed text
+        reply = agent.run(transcribed_text)
+        return {"reply": reply, "transcription": transcribed_text}
 
     except Exception as e:
         print("Voice Chat Error:", e)
