@@ -9,7 +9,7 @@ export default function SignupScreen({ navigation }) {
 
   const handleSignup = async () => {
     try {
-      await axios.post('https://a9da-152-57-122-172.ngrok-free.app/users', {
+      await axios.post('https://75c2-157-50-171-134.ngrok-free.app/users', {
         username,
         password,
         role,

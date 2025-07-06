@@ -18,7 +18,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.jarvis.vragent"
+      "package": "com.smart-scheduler"
     },
     "web": {
       "bundler": "metro",

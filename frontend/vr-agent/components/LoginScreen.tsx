@@ -8,11 +8,12 @@ export default function LoginScreen({ navigation }) {
 
   const handleLogin = async () => {
     try {
-      const res = await axios.get(`https://a9da-152-57-122-172.ngrok-free.app/users/${username}`, {
+      const res = await axios.get(`https://75c2-157-50-171-134.ngrok-free.app/users/${username}`, {
         params: { password }
       });
 
       const userData = res.data;
+      console.log(userData)
 
       // Redirect to Main and pass role + username
       navigation.replace('Main', {

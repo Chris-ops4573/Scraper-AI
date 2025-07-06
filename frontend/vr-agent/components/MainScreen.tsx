@@ -21,7 +21,7 @@ export default function MainScreen({ route }) {
     setResponse('');
 
     try {
-      const res = await axios.post('https://a9da-152-57-122-172.ngrok-free.app/chat', { message: input, username, role });
+      const res = await axios.post('https://75c2-157-50-171-134.ngrok-free.app/chat', { message: input, username, role });
       setResponse(res.data.reply);
     } catch (err) {
       console.error(err);
@@ -76,9 +76,11 @@ export default function MainScreen({ route }) {
       type: 'audio/m4a',
       name: 'audio.m4a',
     });
+    formData.append('username', username);
+    formData.append('role', role);
 
     try {
-      const res = await fetch('https://a9da-152-57-122-172.ngrok-free.app/chat-voice', {
+      const res = await fetch('https://75c2-157-50-171-134.ngrok-free.app/chat-voice', {
         method: 'POST',
         body: formData,
         headers: {
