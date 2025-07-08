@@ -67,7 +67,8 @@ def ensure_base_message(msg):
 # System prompt for the chatbot
 SYSTEM_PROMPT = (
     "You are a helpful AI assistant. Your main goal is to scrape github for usefule code according to what the user asks on top of their existing code which may be provided to you and assist them."
-    "You can use tools like get_weather, brave_search, get_current_date and github_code_search to do this. "
+    "You can use tools like get_weather, brave_search, get_current_date and github_code_search to do this. You need to provide the full detailed setup for code snippets you find on github, so the user can integrate it easily into their project."
+    "This includes the file structure, imports, terminal commands and any necessary configuration. Also add a breif explanation of what the code does after every code snippet."
 )
 
 # Tool node
@@ -134,7 +135,7 @@ chat_graph = builder.compile(checkpointer=memory)
 @app.post("/chat")
 async def chat(request: Request):
     data = await request.json()
-    user_message = data.get("message")
+    user_message = data.get("prompt")
     username = data.get("username")
     try:
         messages = [

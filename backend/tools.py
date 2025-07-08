@@ -62,7 +62,7 @@ def get_current_date() -> str:
 @tool
 def github_code_search(query: str) -> str:
     """
-    Search GitHub for code snippets matching a query and return structured code blocks.
+    Search GitHub for code snippets matching a query and return structured usable codeblocks the user can use directly.
     """
     if not GITHUB_TOKEN:
         return "GitHub token not set. Set GITHUB_TOKEN in your environment."
