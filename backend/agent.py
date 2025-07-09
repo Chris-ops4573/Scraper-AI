@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
-from database.userDatabase import router as user_router
 from tools import get_weather, brave_search, get_current_date, github_code_search, vision_analyze
 from langgraph.graph import StateGraph, END
 import json
@@ -24,7 +23,6 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 app = FastAPI()
-app.include_router(user_router)
 
 app.add_middleware(
     CORSMiddleware,

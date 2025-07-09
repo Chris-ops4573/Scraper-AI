@@ -312,7 +312,7 @@ function getWebviewContent() {
 							text,
 							image_base64: imageBase64,
 							use_file: useCurrentFile
-						});
+						});	
 					} catch (err) {
 						processingDiv.innerHTML = "Error: " + err.message;
 					}
