@@ -4,12 +4,20 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 import json
+from openai import OpenAI
+from pydantic import BaseModel
+from typing import Optional
 
 load_dotenv()
 
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY")
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") 
+
+class VisionInput(BaseModel):
+    image_base64: Optional[str] = None
+    prompt: str 
 
 @tool
 def get_weather(city: str) -> str:
@@ -114,3 +122,28 @@ def github_code_search(query: str) -> str:
     print("github")
 
     return "\n\n".join(result_blocks)
+
+def vision_analyze(data: VisionInput) -> str:
+
+    client = OpenAI(api_key=OPENAI_API_KEY)
+    image_base64 = data.image_base64
+    prompt = data.prompt
+
+    if not image_base64.startswith("data:image"):
+        raise ValueError("Invalid image base64 data.")
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": image_base64}}
+                ],
+            }
+        ],
+        max_tokens=1000
+    )
+    print(response.choices[0].message.content)
+    return response.choices[0].message.content
