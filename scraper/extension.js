@@ -289,6 +289,27 @@ function getWebviewContent() {
 					return div;
 				}
 
+				window.addEventListener('paste', async (e) => {
+					const clipboardItems = e.clipboardData.items;
+					for (let i = 0; i < clipboardItems.length; i++) {
+						const item = clipboardItems[i];
+						if (item.type.indexOf('image') !== -1) {
+							const file = item.getAsFile();
+							const imageInput = document.getElementById('imageInput');
+							const dataTransfer = new DataTransfer();
+							dataTransfer.items.add(file);
+							imageInput.files = dataTransfer.files;
+
+							const info = document.createElement("div");
+							info.textContent = "📋 Image pasted from clipboard";
+							info.style.fontSize = "0.8em";
+							info.style.color = "#999";
+							chat.appendChild(info);
+							chat.scrollTop = chat.scrollHeight;
+						}
+					}
+				});
+
 				send.onclick = async () => {
 					const text = input.value.trim();
 					const imageInput = document.getElementById('imageInput');

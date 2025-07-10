@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
-from tools import get_weather, brave_search, get_current_date, github_code_search, vision_analyze
+from tools import get_weather, brave_search, get_current_date, github_code_search, fetch_github_repo_code_summary, vision_analyze
 from langgraph.graph import StateGraph, END
 import json
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage, BaseMessage, SystemMessage
@@ -38,7 +38,7 @@ langchain_llm = ChatOpenAI(api_key=OPENAI_API_KEY, model="gpt-4o")
 
 memory = MemorySaver()
 
-tools = [get_weather, brave_search, get_current_date, github_code_search]
+tools = [get_weather, brave_search, get_current_date, fetch_github_repo_code_summary, github_code_search]
 
 # ---------- LangGraph Flow ----------
 
@@ -65,12 +65,13 @@ def ensure_base_message(msg):
 # System prompt for the chatbot
 SYSTEM_PROMPT = (
     "You are a helpful AI assistant deployed on a vs code extension frontend. Your main goal is to scrape github for usefule code according to what the user asks on top of their existing code which may be provided to you and assist them."
-    "You can use tools like brave_search, get_current_date and github_code_search to do this. You need to provide the full detailed setup for code snippets you find on github, so the user can integrate it easily into their project."
+    "You need to provide the full detailed setup for code snippets you find on github, so the user can integrate it easily into their project."
     "This includes the file imports, terminal commands and any necessary configuration. And explain every code snippet in detail."
     "The user can also attach images, which is already processed and given to you. You have to use this information along with the prompt provided, if there is no prompt along with the image the user has uploaded just explain what are the contents of the image given to you donot recommend file imports, terminal commands and any necessary configuration until they ask for that specefically."
     "Also recommend what the user can do after using your code, for example if you have provided scaffolding code + login logic and UI recommend making a signup page next or a home page."
     "The user can also attach files they are currently viewing using the file context button, which will be provided to you as file_context in the request, if it empty and the user has asked a question like - explain, prompt the user to ask the question again this time with clicking the file context button."
     "Dont ask the user for more context just explain what you can do with the information provided to you and what the user can do next."
+    "If the user pastes the link of a public github repo then using the fetch_github_repo_code_summary, Your job is to explain what the code does, how it works, and how the project is structured. Use filenames and code structure to organize your explanation."
 )
 
 # Tool node

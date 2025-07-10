@@ -123,6 +123,56 @@ def github_code_search(query: str) -> str:
 
     return "\n\n".join(result_blocks)
 
+@tool
+def fetch_github_repo_code_summary(repo_url: str) -> dict:
+    """
+    Given a public GitHub repo URL, fetch key source code and metadata (README, main files, configs).
+    Returns structured dict for LLM to analyze and explain what the repo does.
+    """
+    import requests
+    import base64
+
+    if "github.com" not in repo_url:
+        return {"error": "Invalid GitHub URL."}
+
+    try:
+        owner, repo = repo_url.strip("/").split("/")[-2:]
+    except Exception:
+        return {"error": "Could not parse owner/repo from URL."}
+
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    key_files = ["README.md", "main.py", "index.js", "app.py", "package.json", "requirements.txt"]
+    output = {"repo": f"{owner}/{repo}", "files": []}
+
+    for file in key_files:
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{file}"
+        r = requests.get(api_url, headers=headers)
+        if r.status_code == 200:
+            try:
+                data = r.json()
+                content = base64.b64decode(data['content']).decode('utf-8')
+                output["files"].append({
+                    "filename": file,
+                    "content": content[:4000]  # Optional: LLM-token-friendly limit
+                })
+            except Exception as e:
+                output["files"].append({
+                    "filename": file,
+                    "error": f"Decoding error: {str(e)}"
+                })
+        else:
+            output["files"].append({
+                "filename": file,
+                "error": "File not found or inaccessible."
+            })
+    
+    print("summary")
+    return output
+
 def vision_analyze(data: VisionInput) -> str:
 
     client = OpenAI(api_key=OPENAI_API_KEY)
