@@ -137,9 +137,11 @@ function getWebviewContent() {
 
 				#input-area {
 					display: flex;
+					align-items: center; /* NEW: aligns children vertically in center */
 					padding: 0.8em;
 					background: #1b1b1b;
 					border-top: 1px solid #333;
+					gap: 0.5em; /* optional: space between elements */
 				}
 
 				#input {
@@ -152,23 +154,29 @@ function getWebviewContent() {
 					outline: none;
 					font-size: 1em;
 					resize: none;
-					min-height: 2.5em;      
-					max-height: 7em;        
+					min-height: 2.5em;
+					max-height: 5em;
 					overflow-y: auto;
 					line-height: 1.4;
 				}
-					
+
+				#imageLabel,
+				.file-toggle,
+				#send {
+					padding: 0.4em 0.8em;
+					min-width: auto;
+					border-radius: 0.9em;
+					font-size: 0.9em;
+					font-weight: bold;
+					white-space: nowrap;
+					cursor: pointer;
+					transition: background 0.3s, color 0.3s;
+				}
+
 				#imageLabel {
-					margin-left: 0.7em;
-					padding: 0.6em 1.2em;
-					border-radius: 1em;
-					border: none;
 					background: linear-gradient(to right, #444, #666);
 					color: #fff;
-					font-weight: bold;
-					cursor: pointer;
-					transition: background 0.3s ease;
-					user-select: none;
+					border: none;
 				}
 
 				#imageLabel:hover {
@@ -176,15 +184,9 @@ function getWebviewContent() {
 				}
 
 				.file-toggle {
-					margin-left: 0.7em;
-					padding: 0.6em 1em;
-					border-radius: 1em;
 					border: 1px solid #444;
 					background: #1f1f1f;
 					color: #ccc;
-					font-weight: bold;
-					cursor: pointer;
-					transition: background 0.3s, color 0.3s;
 				}
 
 				.file-toggle:hover {
@@ -197,24 +199,39 @@ function getWebviewContent() {
 					border: none;
 				}
 
-				.toggle-wrapper label.active {
-					color: #00aaff;
-				}
-
 				#send {
-					margin-left: 0.7em;
-					padding: 0.6em 1.5em;
-					border-radius: 1em;
-					border: none;
 					background: linear-gradient(to right, #00c6ff, #0072ff);
 					color: #fff;
-					font-weight: bold;
-					cursor: pointer;
-					transition: background 0.3s ease;
+					border: none;
 				}
 
 				#send:hover {
 					background: linear-gradient(to right, #0072ff, #00c6ff);
+				}
+
+				#send.loading {
+					position: relative;
+					color: transparent;
+					pointer-events: none;
+				}
+
+				#send.loading::after {
+					content: '';
+					position: absolute;
+					top: 50%;
+					left: 50%;
+					transform: translate(-50%, -50%);
+					width: 16px;
+					height: 16px;
+					border: 2px solid rgba(255, 255, 255, 0.6);
+					border-top: 2px solid white;
+					border-radius: 50%;
+					animation: spin 0.6s linear infinite;
+				}
+
+				@keyframes spin {
+					0% { transform: translate(-50%, -50%) rotate(0deg); }
+					100% { transform: translate(-50%, -50%) rotate(360deg); }
 				}
 
 				pre, code {
@@ -298,9 +315,9 @@ function getWebviewContent() {
 
 					input.value = '';
 					imageInput.value = '';
+					
 					send.disabled = true;
-
-					processingDiv = addMessage('_Processing request..._', 'bot');
+					send.classList.add('loading');
 
 					if (file) {
 						imageBase64 = await toBase64(file);
@@ -345,6 +362,7 @@ function getWebviewContent() {
 							addMessage(message.text, 'bot');
 						}
 						send.disabled = false;
+						send.classList.remove('loading');
 					}
 				});
 			</script>
