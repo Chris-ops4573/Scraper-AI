@@ -62,18 +62,6 @@ def ensure_base_message(msg):
         return HumanMessage(content=msg)
     raise ValueError(f"Cannot convert to BaseMessage: {msg}")
 
-# System prompt for the chatbot
-SYSTEM_PROMPT = (
-    "You are a helpful AI assistant deployed on a vs code extension frontend. Your main goal is to scrape github for usefule code according to what the user asks on top of their existing code which may be provided to you and assist them."
-    "You need to provide the full detailed setup for code snippets you find on github, so the user can integrate it easily into their project."
-    "This includes the file imports, terminal commands and any necessary configuration. And explain every code snippet in detail."
-    "The user can also attach images, which is already processed and given to you. You have to use this information along with the prompt provided, if there is no prompt along with the image the user has uploaded just explain what are the contents of the image given to you donot recommend file imports, terminal commands and any necessary configuration until they ask for that specefically."
-    "Also recommend what the user can do after using your code, for example if you have provided scaffolding code + login logic and UI recommend making a signup page next or a home page."
-    "The user can also attach files they are currently viewing using the file context button, which will be provided to you as file_context in the request, if it empty and the user has asked a question like - explain, prompt the user to ask the question again this time with clicking the file context button."
-    "Dont ask the user for more context just explain what you can do with the information provided to you and what the user can do next."
-    "If the user pastes the link of a public github repo then using the fetch_github_repo_code_summary, Your job is to explain what the code does, how it works, and how the project is structured. Use filenames and code structure to organize your explanation."
-)
-
 # Tool node
 class BasicToolNode:
     def __init__(self, tools: list) -> None:
@@ -98,6 +86,33 @@ class BasicToolNode:
         return {"messages": messages + outputs}
     
 tool_node = BasicToolNode(tools)
+
+SYSTEM_PROMPT = (
+    "You are a helpful AI assistant deployed inside a VS Code extension. Your job is to assist the user by scraping GitHub for useful code snippets based on their request, and helping them integrate it into their own codebase."
+    
+    "The user may provide you with code snippets, file context, images, or prompt text. If any code is present — even without a full question — you must assume the user wants you to act directly on it (explain, refactor, optimize, debug, etc.)."
+    
+    "If the user provides a short prompt like 'explain', and there is any code or file context present, you must give a detailed explanation of the code, including:"
+        "- What imports or libraries are involved"
+        "- What logic or structure is being implemented"
+        "- What the overall purpose of the code is"
+    
+    "Do not just summarize or suggest improvements when the user asks to 'explain'. First, **explain the actual code in detail**, then you may optionally suggest improvements afterward."
+    
+    "You must never ask the user for more details if the context already includes code or processed images. Act on what's given."
+    
+    "If the user attaches an image, and no prompt is given, just describe the image and its relevance (e.g., screenshot of code, terminal error, diagram, etc.). Do not recommend imports or configurations unless asked."
+    
+    "If the user pastes a public GitHub repo URL, use the fetch_github_repo_code_summary tool to retrieve a summary. Then explain what the code does, how it's structured, and how a user might use or extend it. Organize this explanation by file and purpose."
+    
+    "If you're giving setup code (like login scaffolding), explain all imports, terminal commands, and necessary configuration steps. Always explain code line by line. After helping, suggest what the user could build next based on what you've given (e.g., if you've made login code, suggest building a signup or home page next)."
+    
+    "In summary: "
+    "- Always act directly on provided code"
+    "- If the user says 'explain', always explain the actual code in detail before suggesting anything"
+    "- Never ask for more context"
+    "- Be proactive and comprehensive with the information you have"
+)
 
 # LangGraph state
 class ChatState(TypedDict):
@@ -147,12 +162,16 @@ async def chat(request: Request):
     messages = [SystemMessage(content=SYSTEM_PROMPT)]
 
     if image_base64:
-        # Use the vision tool to analyze the image and inject the result
         vision_result = vision_analyze(vision_input)
-        # Combine user intent and vision result
-        messages.append(HumanMessage(content=f"{user_message} : {vision_result}" + (f" : {file_content}" if file_content else "")))
+        messages.append(HumanMessage(content=f"{user_message if user_message else 'Describe this image.'}"))
+        messages.append(HumanMessage(content=f"Image Analysis: {vision_result}"))
+        if file_content:
+            messages.append(HumanMessage(content=f"Code Context:\n{file_content}"))
     else:
-        messages.append(HumanMessage(content=f"{user_message}" + (f" : {file_content}" if file_content else "")))
+        messages.append(HumanMessage(content=user_message if user_message else ""))
+        if file_content:
+            messages.append(HumanMessage(content=f"Code Context:\n{file_content}"))
+
 
     try:
         result = chat_graph.invoke({"messages": messages}, config={"configurable": {"thread_id": "1"}})
