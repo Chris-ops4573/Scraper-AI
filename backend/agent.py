@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from langchain.tools import tool
 from langchain_openai import ChatOpenAI
 from tools import get_weather, brave_search, get_current_date, github_code_search, fetch_github_repo_code_summary, vision_analyze
+from semantic_search import router as semantic_router
 from langgraph.graph import StateGraph, END
 import json
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage, BaseMessage, SystemMessage
@@ -31,6 +32,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(semantic_router, prefix="/semantic")
 
 # ---------- LangChain Tools ----------
 
@@ -89,29 +92,32 @@ tool_node = BasicToolNode(tools)
 
 SYSTEM_PROMPT = (
     "You are a helpful AI assistant deployed inside a VS Code extension. Your job is to assist the user by scraping GitHub for useful code snippets based on their request, and helping them integrate it into their own codebase."
-    
+
     "The user may provide you with code snippets, file context, images, or prompt text. If any code is present — even without a full question — you must assume the user wants you to act directly on it (explain, refactor, optimize, debug, etc.)."
-    
+
     "If the user provides a short prompt like 'explain', and there is any code or file context present, you must give a detailed explanation of the code, including:"
         "- What imports or libraries are involved"
         "- What logic or structure is being implemented"
         "- What the overall purpose of the code is"
-    
+
     "Do not just summarize or suggest improvements when the user asks to 'explain'. First, **explain the actual code in detail**, then you may optionally suggest improvements afterward."
-    
+
     "You must never ask the user for more details if the context already includes code or processed images. Act on what's given."
-    
+
     "If the user attaches an image, and no prompt is given, just describe the image and its relevance (e.g., screenshot of code, terminal error, diagram, etc.). Do not recommend imports or configurations unless asked."
-    
+
     "If the user pastes a public GitHub repo URL, use the fetch_github_repo_code_summary tool to retrieve a summary. Then explain what the code does, how it's structured, and how a user might use or extend it. Organize this explanation by file and purpose."
-    
+
     "If you're giving setup code (like login scaffolding), explain all imports, terminal commands, and necessary configuration steps. Always explain code line by line. After helping, suggest what the user could build next based on what you've given (e.g., if you've made login code, suggest building a signup or home page next)."
-    
-    "In summary: "
+
+    "If the user asks for full implementations or entire codebases, provide **as much code as possible** relevant to the request. Prioritize completeness over brevity. Return the full set of files or modules needed unless explicitly told to keep it short. If necessary, break the code into parts and clearly indicate the file names and structure."
+
+    "In summary:"
     "- Always act directly on provided code"
     "- If the user says 'explain', always explain the actual code in detail before suggesting anything"
     "- Never ask for more context"
     "- Be proactive and comprehensive with the information you have"
+    "- When asked for full code or project scaffolding, return the complete solution across all files unless told otherwise"
 )
 
 # LangGraph state
@@ -148,7 +154,7 @@ builder.add_edge("tools", "chatbot")
 builder.add_edge("chatbot", END)
 chat_graph = builder.compile(checkpointer=memory)
 
-# ---------- Endpoints ----------
+# ---------- Endpoints ---------
 
 @app.post("/chat")
 async def chat(request: Request):
@@ -182,39 +188,3 @@ async def chat(request: Request):
         print("LangGraph Error:", e)
         return {"reply": f"Error processing request: {e}"}
 
-@app.post("/chat-voice")
-async def chat_voice(
-    audio: UploadFile = File(...),
-    username: str = Form(...),
-    role: str = Form(...)
-):
-    try:
-        contents = await audio.read()
-        safe_filename = f"temp_{uuid.uuid4()}.m4a"
-
-        with open(safe_filename, "wb") as f:
-            f.write(contents)
-
-        with open(safe_filename, "rb") as file_for_whisper:
-            transcription = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=file_for_whisper
-            )
-
-        transcribed_text = transcription.text
-        print("Transcription:", transcribed_text)
-
-        os.remove(safe_filename)
-        messages = [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=transcribed_text)
-        ]
-        # Use HumanMessage for user input
-        result = chat_graph.invoke({"messages": messages}, config={"configurable": {"thread_id": "1"}})
-        last_message = result["messages"][-1]
-        reply = getattr(last_message, "content", str(last_message))
-        return {"reply": reply, "transcription": transcribed_text}
-
-    except Exception as e:
-        print("Voice Chat Error:", e)
-        return {"reply": f"Error processing voice request: {e}"}

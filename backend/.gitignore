@@ -1,2 +1,2 @@
 .env
-prompts.py
+chroma_db_*

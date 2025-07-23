@@ -11,7 +11,9 @@
   ],
   "activationEvents": [
     "onView:scraper.chatView",
-    "onCommand:scraper.scrapeForCode"
+    "onCommand:scraper.scrapeForCode",
+    "onCommand:scraper.semanticSearch",
+    "onCommand:scraper.uploadProjectToAgent"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -19,7 +21,16 @@
       {
         "command": "scraper.scrapeForCode",
         "title": "Scrape for code"
+      }, 
+      {
+        "command": "scraper.semanticSearch",
+        "title": "Semantic File Search"
+      },
+      {
+        "command": "scraper.uploadProjectToAgent",
+        "title": "Upload Project to Agent"
       }
+
     ],
     "viewsContainers": {},
     "views": {
@@ -47,6 +58,8 @@
   },
   "dependencies": {
     "axios": "^1.10.0",
-    "marked": "^16.0.0"
+    "fs": "^0.0.1-security",
+    "marked": "^16.0.0",
+    "path": "^0.12.7"
   }
 }

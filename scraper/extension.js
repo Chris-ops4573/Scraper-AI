@@ -1,11 +1,15 @@
 const vscode = require('vscode');
 const axios = require('axios'); // Add axios to your dependencies
+const fs = require('fs');
+const path = require('path');
 /**
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
 
 	console.log('Congratulations, your extension "scraper" is now active!');
+
+	const machineId = vscode.env.machineId;
 
 	const disposable = vscode.commands.registerCommand('scraper.scrapeForCode', function () {
 		vscode.window.showInformationMessage('Hello World from scraper!');
@@ -19,6 +23,125 @@ function activate(context) {
 			'scraper.chatView',
 			new ScraperChatViewProvider(context)
 		)
+	);
+
+	const getActiveProjectName = () => {
+	const folders = vscode.workspace.workspaceFolders;
+	if (!folders || folders.length === 0) return null;
+	return path.basename(folders[0].uri.fsPath);
+};
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('scraper.semanticSearch', async () => {
+			const query = await vscode.window.showInputBox({
+				prompt: "What are you looking for?",
+				placeHolder: "e.g. login validation, error handling middleware"
+			});
+
+			if (!query) return;
+
+			const projectName = getActiveProjectName();
+			if (!projectName) {
+				vscode.window.showErrorMessage("No active project folder found.");
+				return;
+			}
+
+			try {
+				const res = await axios.post('http://localhost:8000/semantic/semantic-search', {
+					machineId,
+					projectName,
+					query
+				});
+
+				const { file_path, line_number } = res.data;
+
+				const folderUri = vscode.workspace.workspaceFolders?.[0]?.uri;
+				const fileUri = vscode.Uri.joinPath(folderUri, file_path);
+				const doc = await vscode.workspace.openTextDocument(fileUri);
+
+				const editor = await vscode.window.showTextDocument(doc);
+
+				const position = new vscode.Position(line_number, 0);
+				const range = new vscode.Range(position, position);
+
+				editor.selection = new vscode.Selection(position, position);
+				editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+			} catch (err) {
+				vscode.window.showErrorMessage("Search failed: " + err.message);
+			}
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('scraper.uploadProjectToAgent', async () => {
+			const folders = vscode.workspace.workspaceFolders;
+			if (!folders || folders.length === 0) {
+				vscode.window.showErrorMessage("No folder is open in VS Code.");
+				return;
+			}
+
+			const rootPath = folders[0].uri.fsPath;
+			const projectName = path.basename(rootPath);
+
+			vscode.window.withProgress({
+				location: vscode.ProgressLocation.Notification,
+				title: "Uploading project to agent, this may take a while...",
+				cancellable: true
+			}, async (progress) => {
+				try {
+					const files = [];
+
+					const IGNORED_DIRS = ['node_modules', '.git', 'dist', 'build', '.next', '.vscode'];
+					const ALLOWED_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx', '.json', '.html', '.py', '.env', '.md'];
+					const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
+
+					function shouldIncludeFile(filePath) {
+						const ext = path.extname(filePath);
+						const baseName = path.basename(filePath);
+						return (
+							(baseName === 'package.json' || baseName === '.env') ||
+							(ALLOWED_EXTENSIONS.includes(ext) && baseName !== 'package-lock.json')
+						);
+
+					}
+
+					function readFilesRecursively(dir, files) {
+						const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+						for (const entry of entries) {
+							const fullPath = path.join(dir, entry.name);
+							const relativePath = path.relative(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', fullPath);
+
+							if (entry.isDirectory() && IGNORED_DIRS.includes(entry.name)) continue;
+
+							if (entry.isDirectory()) {
+								readFilesRecursively(fullPath, files);
+							} else if (entry.isFile()) {
+								if (shouldIncludeFile(fullPath)) {
+									const stats = fs.statSync(fullPath);
+									if (stats.size < MAX_FILE_SIZE) {
+										const content = fs.readFileSync(fullPath, 'utf-8');
+										files.push({ path: relativePath, content });
+									}
+								}
+							}
+						}
+					}
+
+					readFilesRecursively(rootPath, files);
+
+					await axios.post('http://localhost:8000/semantic/upload-folder', {
+						machineId,
+						projectName,
+						files
+					});
+
+					vscode.window.showInformationMessage("✅ Project uploaded to agent successfully.");
+				} catch (err) {
+					vscode.window.showErrorMessage("Upload failed: " + err.message);
+				}
+			});
+		})
 	);
 }
 
@@ -317,7 +440,7 @@ function getWebviewContent() {
 					let imageBase64 = null;
 					let fileContent = null;
 
-					if (!text && !file && !useCurfrentFile) return;
+					if (!text && !file && !useCurrentFile) return;
 
 					const messageWrapper = addMessage(text || "[Image uploaded]" || "[File context attached]", 'user');
 
