@@ -96,17 +96,25 @@ async def semantic_search(payload: SemanticSearchRequest):
 
         collection = client.get_collection(f"{machine_id}_{project_name}", embedding_function=embedding_function)
 
-        results = collection.query(query_texts=[query], n_results=1)
+        results = collection.query(query_texts=[query], n_results=3)
 
         if results["documents"] and len(results["documents"][0]) > 0:
-            doc = results["documents"][0][0]
-            metadata = results["metadatas"][0][0]
-            return {
-                "file_path": metadata["file_path"],
-                "line_number": metadata["line_start"]
-            }
+            top_matches = []
+            for i in range(len(results["documents"][0])):
+                metadata = results["metadatas"][0][i]
+                top_matches.append({
+                    "file_path": metadata["file_path"],
+                    "line_number": metadata["line_start"]
+                })
+
+            return {"matches": top_matches}
         else:
             return {"error": "No match found"}
     except Exception as e:
-        print("Error in semantic_search:", e)
-        return {"error": str(e)}
+        error_message = str(e)
+        if "does not exist" in error_message and "Collection" in error_message:
+            return {"error": "This project hasn't been uploaded yet. Please upload the folder first."}
+        else:
+            print("Error in semantic_search:", e)
+            return {"error": "An unexpected error occurred. Please try again."}
+

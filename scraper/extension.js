@@ -53,12 +53,36 @@ function activate(context) {
 					query
 				});
 
-				const { file_path, line_number } = res.data;
+				if (res.data.error) {
+					vscode.window.showErrorMessage("Search failed: " + res.data.error);
+					return;
+				}
+
+				const matches = res.data.matches;
+				if (!matches || matches.length === 0) {
+					vscode.window.showInformationMessage("No relevant results found.");
+					return;
+				}
+
+				const picked = await vscode.window.showQuickPick(
+					matches.map((match, index) => ({
+						label: `Result ${index + 1}`,
+						description: `${match.file_path} : Line ${match.line_number + 1}`,
+						detail: `Click to go to this location`,
+						match: match
+					})),
+					{
+						placeHolder: "Select the most relevant result to jump to"
+					}
+				);
+
+				if (!picked) return;
+
+				const { file_path, line_number } = picked.match;
 
 				const folderUri = vscode.workspace.workspaceFolders?.[0]?.uri;
 				const fileUri = vscode.Uri.joinPath(folderUri, file_path);
 				const doc = await vscode.workspace.openTextDocument(fileUri);
-
 				const editor = await vscode.window.showTextDocument(doc);
 
 				const position = new vscode.Position(line_number, 0);
