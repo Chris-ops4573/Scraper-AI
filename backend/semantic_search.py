@@ -38,17 +38,17 @@ async def upload_folder(payload: UploadFolderRequest):
         machine_id = payload.machineId
         files = payload.files
         project_name = payload.projectName
-        user_path = f"./chroma_db_{machine_id}_{project_name}"
+        user_path = f"./chroma_db/{machine_id}"
 
         client = PersistentClient(path=user_path)
 
         # Step 2: Create or get collection
         try:
-            client.delete_collection(name=f"{machine_id}_{project_name}")
+            client.delete_collection(name=f"{project_name}")
         except:
             pass
 
-        collection = client.create_collection(name=f"{machine_id}_{project_name}", embedding_function=embedding_function)
+        collection = client.create_collection(name=f"{project_name}", embedding_function=embedding_function)
 
         # Step 3: Split and prepare docs
         documents = []
@@ -90,11 +90,11 @@ async def semantic_search(payload: SemanticSearchRequest):
         machine_id = payload.machineId
         query = payload.query
         project_name = payload.projectName
-        user_path = f"./chroma_db_{machine_id}_{project_name}"
+        user_path = f"./chroma_db/{machine_id}"
 
         client = PersistentClient(path=user_path)
 
-        collection = client.get_collection(f"{machine_id}_{project_name}", embedding_function=embedding_function)
+        collection = client.get_collection(f"{project_name}", embedding_function=embedding_function)
 
         results = collection.query(query_texts=[query], n_results=3)
 
