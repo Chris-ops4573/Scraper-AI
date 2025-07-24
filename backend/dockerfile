@@ -15,4 +15,4 @@ COPY . .
 EXPOSE 8000
 
 # Start the server (change if your main file is not main.py)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "agent:app", "--host", "0.0.0.0", "--port", "8000"]
