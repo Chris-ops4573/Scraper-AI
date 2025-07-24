@@ -32,22 +32,22 @@ Scraper.AI is an intelligent VS Code extension + backend API that helps develope
 
 ### 1. Backend Setup
 
-#### Clone the Repository
+- Clone the Repository
 git clone https://github.com/Chris-ops4573/jarvis-VR.git
 cd scraper-ai
 
-#### Install Requirements
+- Install Requirements
 pip install -r requirements.txt
 
-#### Run the Backend
+- Run the Backend
 uvicorn main:app --reload
 
-#### Make sure your .env contains your OpenAI API key like this:
+- Make sure your .env contains your OpenAI API key like this:
 OPENAI_API_KEY=your_key_here
 
 ### 2. Frontend Setup
 
-#### Go to the extension.js file and click 'Fn + F5':
+- Go to the extension.js file and click 'Fn + F5':
 This will open the vs code extension in vs codes exntension development host
 
 ---
