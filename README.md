@@ -56,8 +56,8 @@ This will open the vs code extension in vs codes exntension development host
 ### 🗂️ 1. Upload Your Project
 - Press Ctrl + Shift + P (or Cmd + Shift + P on Mac) to open the Command Palette.
 - Search for and select: Upload Project to Agent.
-- Choose the folder you want to enable semantic search on. This folder will be indexed and stored locally.
-- This step sets up your project in a local ChromaDB database for fast semantic retrieval.
+- The current folder you are working on will be sentenabing you to perform semantic queries.
+- This step sets up your project in a ChromaDB database for fast semantic retrieval.
 
 ### 🔎 2. Perform a Semantic Search
 - Again open the Command Palette (Ctrl + Shift + P).
