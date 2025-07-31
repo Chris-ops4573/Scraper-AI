@@ -27,7 +27,8 @@ If you wish to run it locally check out the [How to use](https://github.com/Chri
 - **Vector DB**: ChromaDB
 - **Embeddings**: OpenAI
 - **Web Scraping**: Brave Search, GitHub
-- **AI Logic**: OpenAI LLMs
+- **AI Agent setup**: OpenAI, Langgraph
+- **Deployment services**: AWS EC2 (Backend), VS code maarketplace(Frontend)
 
 ---
 
@@ -45,15 +46,17 @@ If you wish to run it locally check out the [How to use](https://github.com/Chri
 #### Run the Backend
 - uvicorn main:app --reload
 
-#### Make sure your .env contains your OpenAI API key like this:
+#### Make sure your .env contains your API keys like this:
 - OPENAI_API_KEY=your_key_here
+- BRAVE_API_KEY=your_key_here
+- GITHUB_TOKEN=your_token_here
 
 Or simply setup the Dockerfile after cloning the repo through these commands:
 
 - docker build -t scraper-ai:v1.0.0 Dockerfile .
 - docker run -p 8080:8080 scraper-ai:v1.0.0
 
-Note: You still have to setup your API keys to run the backend locally using a .env file before running your docker container.
+Note: You still have to setup your API keys using a .env file before running your docker container.
 
 ### 2. Frontend Setup
 
@@ -85,4 +88,4 @@ This will open the vs code extension in vs codes exntension development host
 - Uses chromadb with a custom embedding function (OpenAI or other) to store vectorized document chunks.
 - Upon upload, your entire project is split into manageable chunks and indexed with their file paths and line ranges.
 - Semantic queries are matched against this database for precise and intelligent navigation.
-- The coding assistant is a custom AI agent integrated with Brave Search and GitHub scraping capabilities, meaning it adapts to your query in real time and doesn't rely solely on pre-trained data.
+- The coding assistant is a custom AI agent integrated with Brave Search and GitHub scraping capabilities providing intelligent coding assistance. 
