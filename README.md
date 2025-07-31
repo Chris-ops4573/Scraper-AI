@@ -6,6 +6,7 @@ Scraper.AI is an intelligent VS Code extension + backend API that helps develope
 - 🤖 **Custom Code Assistant**: Automatically scrapes Brave Search and GitHub to provide contextual answers and code snippets.
 
 Check out the extention [here](https://marketplace.visualstudio.com/items?itemName=Christine-devops1234.scraper)
+
 ---
 
 ## ✨ Features
