@@ -36,22 +36,22 @@ If you wish to run it locally check out the [How to use](https://github.com/Chri
 ### 1. Backend Setup
 
 #### Clone the Repository
-git clone https://github.com/Chris-ops4573/jarvis-VR.git
-cd scraper-ai
+- git clone https://github.com/Chris-ops4573/jarvis-VR.git
+- cd scraper-ai
 
 #### Install Requirements
-pip install -r requirements.txt
+- pip install -r requirements.txt
 
 #### Run the Backend
-uvicorn main:app --reload
+- uvicorn main:app --reload
 
 #### Make sure your .env contains your OpenAI API key like this:
-OPENAI_API_KEY=your_key_here
+- OPENAI_API_KEY=your_key_here
 
 Or simply setup the Dockerfile after cloning the repo through these commands:
 
-docker build -t scraper-ai:v1.0.0 Dockerfile .
-docker run -p 8080:8080 scraper-ai:v1.0.0
+- docker build -t scraper-ai:v1.0.0 Dockerfile .
+- docker run -p 8080:8080 scraper-ai:v1.0.0
 
 Note: You still have to setup your API keys to run the backend locally using a .env file. 
 
