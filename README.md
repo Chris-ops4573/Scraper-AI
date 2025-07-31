@@ -49,8 +49,10 @@ uvicorn main:app --reload
 OPENAI_API_KEY=your_key_here
 
 Or simply setup the Dockerfile after cloning the repo through these commands:
+
 docker build -t scraper-ai:v1.0.0 Dockerfile .
 docker run -p 8080:8080 scraper-ai:v1.0.0
+
 Note: You still have to setup your API keys to run the backend locally using a .env file. 
 
 ### 2. Frontend Setup
