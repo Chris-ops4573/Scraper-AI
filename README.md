@@ -60,6 +60,11 @@ Note: You still have to setup your API keys using a .env file before running you
 
 ### 2. Frontend Setup
 
+#### Downloading dependencies 
+- Change directory to scraper
+- Run : npm install
+
+#### Running vs Code extension development host
 - Go to the extension.js file and click 'Fn + F5':
 This will open the vs code extension in vs codes exntension development host
 
