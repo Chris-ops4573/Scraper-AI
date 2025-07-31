@@ -5,7 +5,8 @@ Scraper.AI is an intelligent VS Code extension + backend API that helps develope
 - 🔍 **Semantic Search**: Ask a natural language question like “Where is the model initialized?” and instantly jump to the most relevant line in your project.
 - 🤖 **Custom Code Assistant**: Automatically scrapes Brave Search and GitHub to provide contextual answers and code snippets.
 
-Check out the extention [here](https://marketplace.visualstudio.com/items?itemName=Christine-devops1234.scraper)
+Check out the extention [here](https://marketplace.visualstudio.com/items?itemName=Christine-devops1234.scraper) or install it directly in vs Code extensions and start using. 
+If you wish to run it locally check out the [How to use](https://github.com/Chris-ops4573/Scraper-AI/blob/main/README.md#%EF%B8%8F-how-to-use) section. 
 
 ---
 
