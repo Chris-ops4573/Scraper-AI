@@ -26,10 +26,10 @@ function activate(context) {
 	);
 
 	const getActiveProjectName = () => {
-	const folders = vscode.workspace.workspaceFolders;
-	if (!folders || folders.length === 0) return null;
-	return path.basename(folders[0].uri.fsPath);
-};
+		const folders = vscode.workspace.workspaceFolders;
+		if (!folders || folders.length === 0) return null;
+		return path.basename(folders[0].uri.fsPath);
+	};
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('scraper.semanticSearch', async () => {
@@ -40,14 +40,18 @@ function activate(context) {
 
 			if (!query) return;
 
-			const projectName = getActiveProjectName();
+			let projectName = getActiveProjectName();
 			if (!projectName) {
 				vscode.window.showErrorMessage("No active project folder found.");
 				return;
 			}
 
+			projectName = projectName
+				.replace(/[^a-zA-Z0-9._-]/g, '-') // replace invalid characters with '-'
+				.replace(/^-+|-+$/g, ''); // remove leading/trailing dashes
+
 			try {
-				const res = await axios.post('http://localhost:8000/semantic/semantic-search', {
+				const res = await axios.post('http://34.216.243.243/semantic/semantic-search', {
 					machineId,
 					projectName,
 					query
@@ -64,35 +68,52 @@ function activate(context) {
 					return;
 				}
 
-				const picked = await vscode.window.showQuickPick(
-					matches.map((match, index) => ({
-						label: `Result ${index + 1}`,
-						description: `${match.file_path} : Line ${match.line_number + 1}`,
-						detail: `Click to go to this location`,
-						match: match
-					})),
-					{
-						placeHolder: "Select the most relevant result to jump to"
-					}
-				);
+				// Persistent QuickPick
+				const quickPick = vscode.window.createQuickPick();
+				quickPick.items = matches.map((match, index) => ({
+					label: `Result ${index + 1}`,
+					description: `${match.file_path} : Line ${match.line_number + 1}`,
+					detail: `Click to go to this location`,
+					match
+				}));
+				quickPick.title = "Semantic Search Results";
+				quickPick.matchOnDescription = true;
+				quickPick.matchOnDetail = true;
+				quickPick.ignoreFocusOut = true; // Keeps it open when focus changes
 
-				if (!picked) return;
+				// Handle when user presses enter (doesn't auto-close)
+				quickPick.onDidAccept(async () => {
+					const picked = quickPick.selectedItems[0];
+					if (!picked) return;
 
-				const { file_path, line_number } = picked.match;
+					const { file_path, line_number } = picked.match;
 
-				const folderUri = vscode.workspace.workspaceFolders?.[0]?.uri;
-				const fileUri = vscode.Uri.joinPath(folderUri, file_path);
-				const doc = await vscode.workspace.openTextDocument(fileUri);
-				const editor = await vscode.window.showTextDocument(doc);
+					const folderUri = vscode.workspace.workspaceFolders?.[0]?.uri;
+					const fileUri = vscode.Uri.joinPath(folderUri, file_path);
+					const doc = await vscode.workspace.openTextDocument(fileUri);
+					const editor = await vscode.window.showTextDocument(doc);
 
-				const position = new vscode.Position(line_number, 0);
-				const range = new vscode.Range(position, position);
+					const position = new vscode.Position(line_number, 0);
+					const range = new vscode.Range(position, position);
+					editor.selection = new vscode.Selection(position, position);
+					editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
 
-				editor.selection = new vscode.Selection(position, position);
-				editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+					// ❌ DO NOT call quickPick.hide() or dispose(), keep it open
+				});
+
+				// Close only when ESC or click outside
+				quickPick.onDidHide(() => quickPick.dispose());
+
+				quickPick.show();
+
 			} catch (err) {
-				vscode.window.showErrorMessage("Search failed: " + err.message);
+				if (err.code === 'ENOTFOUND' || err.message.includes('awseb') || err.message.includes('getaddrinfo')) {
+					vscode.window.showErrorMessage("Backend not live. Please try again later.");
+				} else {
+					vscode.window.showErrorMessage("Upload failed: " + err.message);
+				}		
 			}
+
 		})
 	);
 
@@ -105,7 +126,12 @@ function activate(context) {
 			}
 
 			const rootPath = folders[0].uri.fsPath;
-			const projectName = path.basename(rootPath);
+			let projectName = path.basename(rootPath);
+
+			// Sanitize projectName to meet backend validation requirements
+			projectName = projectName
+				.replace(/[^a-zA-Z0-9._-]/g, '-') // replace invalid characters with '-'
+				.replace(/^-+|-+$/g, ''); // remove leading/trailing dashes
 
 			vscode.window.withProgress({
 				location: vscode.ProgressLocation.Notification,
@@ -115,8 +141,12 @@ function activate(context) {
 				try {
 					const files = [];
 
-					const IGNORED_DIRS = ['node_modules', '.git', 'dist', 'build', '.next', '.vscode'];
-					const ALLOWED_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx', '.json', '.html', '.py', '.env', '.md'];
+					const IGNORED_DIRS = [
+						'node_modules', '.git', 'dist', 'build', '.next', '.vscode', '.venv', '__pycache__', 'env', 'target', 'out', 'bin', 'logs'
+					];
+					const ALLOWED_EXTENSIONS = [
+						'.js', '.ts', '.jsx', '.tsx', '.json', '.html', '.py', '.env', '.java', '.xml', '.properties'
+					];
 					const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 
 					function shouldIncludeFile(filePath) {
@@ -126,7 +156,6 @@ function activate(context) {
 							(baseName === 'package.json' || baseName === '.env') ||
 							(ALLOWED_EXTENSIONS.includes(ext) && baseName !== 'package-lock.json')
 						);
-
 					}
 
 					function readFilesRecursively(dir, files) {
@@ -154,7 +183,7 @@ function activate(context) {
 
 					readFilesRecursively(rootPath, files);
 
-					await axios.post('http://localhost:8000/semantic/upload-folder', {
+					await axios.post('http://34.216.243.243/semantic/upload-folder', {
 						machineId,
 						projectName,
 						files
@@ -162,7 +191,11 @@ function activate(context) {
 
 					vscode.window.showInformationMessage("✅ Project uploaded to agent successfully.");
 				} catch (err) {
-					vscode.window.showErrorMessage("Upload failed: " + err.message);
+					if (err.code === 'ENOTFOUND' || err.message.includes('awseb') || err.message.includes('getaddrinfo')) {
+						vscode.window.showErrorMessage("Backend not live. Please try again later.");
+					} else {
+						vscode.window.showErrorMessage("Upload failed: " + err.message);
+				}
 				}
 			});
 		})
@@ -192,7 +225,7 @@ class ScraperChatViewProvider {
 				}
 
 				try {
-					const response = await axios.post('http://localhost:8000/chat', {
+					const response = await axios.post('http://34.216.243.243/chat', {
 						prompt: text,
 						image_base64: image_base64,
 						file_context: file_context
@@ -203,10 +236,17 @@ class ScraperChatViewProvider {
 						text: response.data.reply
 					});
 				} catch (err) {
-					webviewView.webview.postMessage({
-						command: 'response',
-						text: 'Error: ' + err.message
-					});
+					if (err.code === 'ENOTFOUND' || err.message.includes('getaddrinfo')) {
+						webviewView.webview.postMessage({
+							command: 'response',
+							text: 'Backend not live. Please try again later'
+						});
+					} else{
+						webviewView.webview.postMessage({	
+							command: 'response',
+							text: 'Error: ' + err.message
+						});
+					}
 				}
 			}
 		});
@@ -222,180 +262,213 @@ function getWebviewContent() {
 		<head>
 			<meta charset="UTF-8">
 			<style>
+				/* Dark-Themed Chat UI Stylesheet */
+				:root {
+				/* Theme colors */
+				--bg-dark: #0d0d0d;
+				--bg-light: #1f1f1f;
+				--accent: #274156;
+				--accent-dark: #1b2a38;
+				--text-primary: #e0e0e0;
+				--text-secondary: #777;
+				--border: #333;
+				--bubble-user: linear-gradient(135deg, #274156 0%, #1b2a38 100%);
+				--bubble-bot: rgba(255, 255, 255, 0.08);
+				}
+
+				* {
+				box-sizing: border-box;
+				}
+
 				body {
-					font-family: 'Segoe UI', Arial, sans-serif;
-					margin: 0;
-					padding: 0;
-					background: #0f0f0f;
-					color: #e0e0e0;
-					height: 100vh;
-					display: flex;
-					flex-direction: column;
+				font-family: 'Segoe UI', Arial, sans-serif;
+				margin: 0;
+				padding: 0;
+				background: var(--bg-dark);
+				color: var(--text-primary);
+				height: 100vh;
+				display: flex;
+				flex-direction: column;
+				overflow: hidden;
 				}
 
+				/* Chat area */
 				#chat {
-					flex: 1;
-					overflow-y: auto;
-					padding: 1em;
-					background: linear-gradient(to bottom, #121212, #1a1a1a);
-					border-bottom: 1px solid #333;
+				flex: 1;
+				overflow-y: auto;
+				padding: 1.5em;
+				background: linear-gradient(to bottom, #121212 0%, #1f1f1f 100%);
+				border-bottom: 1px solid var(--border);
+				scrollbar-width: thin;
+				scrollbar-color: var(--border) transparent;
 				}
 
+				#chat::-webkit-scrollbar { width: 8px; }
+				#chat::-webkit-scrollbar-track { background: transparent; }
+				#chat::-webkit-scrollbar-thumb { background-color: var(--border); border-radius: 4px; }
+
+				/* Message bubbles */
 				.message-wrapper {
-					display: flex;
-					width: 100%;
-					margin-bottom: 0.7em;
-					animation: fadeIn 0.3s ease-in-out;
+				display: flex;
+				width: 100%;
+				margin-bottom: 1em;
+				animation: fadeIn 0.4s ease-out;
 				}
-
-				.message-wrapper.user {
-					justify-content: flex-end;
-				}
-
-				.message-wrapper.bot {
-					justify-content: flex-start;
-				}
+				.message-wrapper.user { justify-content: flex-end; }
+				.message-wrapper.bot { justify-content: flex-start; }
 
 				.bubble {
-					display: inline-block;
-					padding: 0.7em 1.2em;
-					border-radius: 1.3em;
-					box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
-					word-break: break-word;
-					max-width: 70%;
-					white-space: pre-wrap;
-					width: fit-content;
-					transition: all 0.3s ease;
+				position: relative;
+				padding: 0.8em 1.4em;
+				border-radius: 1.2em;
+				box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+				word-break: break-word;
+				max-width: 75%;
+				width: fit-content;
+				background-clip: padding-box;
+				transition: transform 0.2s ease, box-shadow 0.2s ease;
+				}
+				.bubble:hover {
+				transform: translateY(-2px);
+				box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6);
 				}
 
 				.bubble.user {
-					background: linear-gradient(135deg, #007acc 0%, #005ea6 100%);
-					color: #fff;
-					text-align: left;
+				background: var(--bubble-user);
+				color: #f0f0f0;
+				border-bottom-right-radius: 0.4em;
+				}
+				.bubble.user::after {
+				content: "";
+				position: absolute;
+				bottom: 0;
+				right: -8px;
+				border-top: 10px solid var(--bubble-user);
+				border-left: 10px solid transparent;
 				}
 
 				.bubble.bot {
-					background: rgba(255, 255, 255, 0.05);
-					backdrop-filter: blur(6px);
-					border: 1px solid rgba(255, 255, 255, 0.1);
-					color: #dcdcdc;
-					text-align: left;
+				background: var(--bubble-bot);
+				backdrop-filter: blur(8px);
+				border: 1px solid var(--border);
+				color: var(--text-primary);
+				border-bottom-left-radius: 0.4em;
+				}
+				.bubble.bot::after {
+				content: "";
+				position: absolute;
+				bottom: 0;
+				left: -8px;
+				border-top: 10px solid var(--bubble-bot);
+				border-right: 10px solid transparent;
 				}
 
+				/* Input area */
 				#input-area {
-					display: flex;
-					align-items: center; /* NEW: aligns children vertically in center */
-					padding: 0.8em;
-					background: #1b1b1b;
-					border-top: 1px solid #333;
-					gap: 0.5em; /* optional: space between elements */
+				display: flex;
+				align-items: center;
+				padding: 1em;
+				background: var(--bg-light);
+				border-top: 1px solid var(--border);
+				gap: 0.7em;
+				transition: background 0.3s;
 				}
+				#input-area:hover { background: #2a2a2a; }
 
 				#input {
-					flex: 1;
-					padding: 0.7em 1em;
-					border-radius: 1em;
-					border: 1px solid #555;
-					background: #121212;
-					color: #d4d4d4;
-					outline: none;
-					font-size: 1em;
-					resize: none;
-					min-height: 2.5em;
-					max-height: 5em;
-					overflow-y: auto;
-					line-height: 1.4;
+				flex: 1;
+				padding: 0.8em 1.2em;
+				border-radius: 1em;
+				border: 1px solid #555;
+				background: #181818;
+				color: var(--text-primary);
+				outline: none;
+				font-size: 1em;
+				resize: none;
+				min-height: 2.8em;
+				max-height: 6em;
+				overflow-y: auto;
+				line-height: 1.5;
+				transition: border-color 0.2s;
 				}
+				#input:focus { border-color: var(--accent); }
 
+				/* Buttons */
 				#imageLabel,
 				.file-toggle,
 				#send {
-					padding: 0.4em 0.8em;
-					min-width: auto;
-					border-radius: 0.9em;
-					font-size: 0.9em;
-					font-weight: bold;
-					white-space: nowrap;
-					cursor: pointer;
-					transition: background 0.3s, color 0.3s;
+				padding: 0.5em 1em;
+				border-radius: 1em;
+				font-size: 0.9em;
+				font-weight: bold;
+				cursor: pointer;
+				transition: background 0.3s, color 0.3s, transform 0.2s;
 				}
 
 				#imageLabel {
-					background: linear-gradient(to right, #444, #666);
-					color: #fff;
-					border: none;
+				background: linear-gradient(to right, #444, #666);
+				color: #fff;
+				border: none;
 				}
+				#imageLabel:hover { transform: scale(1.05); background: linear-gradient(to right, #666, #444); }
 
-				#imageLabel:hover {
-					background: linear-gradient(to right, #666, #444);
+				#imageLabel.active {
+					background: linear-gradient(45deg, var(--accent-dark), var(--accent));
+					color: #fff;
 				}
 
 				.file-toggle {
-					border: 1px solid #444;
-					background: #1f1f1f;
-					color: #ccc;
+				border: 1px solid #444;
+				background: #1f1f1f;
+				color: var(--text-secondary);
 				}
-
-				.file-toggle:hover {
-					background: #292929;
-				}
-
+				.file-toggle:hover,
 				.file-toggle.active {
-					background: linear-gradient(to right, #00c6ff, #0072ff);
-					color: white;
-					border: none;
+				background: var(--accent);
+				color: #fff;
+				border: none;
+				transform: scale(1.05);
 				}
 
 				#send {
-					background: linear-gradient(to right, #00c6ff, #0072ff);
-					color: #fff;
-					border: none;
+				background: linear-gradient(to right, var(--accent), var(--accent-dark));
+				color: #fff;
+				border: none;
 				}
-
-				#send:hover {
-					background: linear-gradient(to right, #0072ff, #00c6ff);
-				}
-
+				#send:hover { transform: scale(1.05); background: linear-gradient(to right, var(--accent-dark), var(--accent)); }
 				#send.loading {
-					position: relative;
-					color: transparent;
-					pointer-events: none;
+				position: relative;
+				color: transparent;
+				pointer-events: none;
 				}
-
 				#send.loading::after {
-					content: '';
-					position: absolute;
-					top: 50%;
-					left: 50%;
-					transform: translate(-50%, -50%);
-					width: 16px;
-					height: 16px;
-					border: 2px solid rgba(255, 255, 255, 0.6);
-					border-top: 2px solid white;
-					border-radius: 50%;
-					animation: spin 0.6s linear infinite;
+				content: '';
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				transform: translate(-50%, -50%);
+				width: 16px;
+				height: 16px;
+				border: 2px solid rgba(255, 255, 255, 0.6);
+				border-top: 2px solid white;
+				border-radius: 50%;
+				animation: spin 0.6s linear infinite;
 				}
 
-				@keyframes spin {
-					0% { transform: translate(-50%, -50%) rotate(0deg); }
-					100% { transform: translate(-50%, -50%) rotate(360deg); }
-				}
-
+				/* Code blocks */
 				pre, code {
-					background: #121212;
-					color: #eee;
-					padding: 0.5em;
-					border-radius: 6px;
-					overflow-x: auto;
-					font-family: Consolas, monospace;
-					font-size: 0.9em;
+				background: #181818;
+				color: #e5e5e5;
+				padding: 0.6em;
+				border-radius: 6px;
+				overflow-x: auto;
+				font-family: Consolas, monospace;
+				font-size: 0.95em;
 				}
 
-				/* Animation */
-				@keyframes fadeIn {
-					from { opacity: 0; transform: translateY(4px); }
-					to { opacity: 1; transform: translateY(0); }
-				}
+				/* Animations */
+				@keyframes spin { to { transform: translate(-50%, -50%) rotate(360deg); } }
+				@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
 			</style>
 		</head>
@@ -414,15 +487,27 @@ function getWebviewContent() {
 				const chat = document.getElementById('chat');
 				const input = document.getElementById('input');
 				const send = document.getElementById('send');
+				const imageInput = document.getElementById('imageInput');
+				const imageLabel = document.getElementById('imageLabel');
 				let useCurrentFile = false;
 
+				// Toggle file context
 				const fileBtn = document.getElementById("fileContextBtn");
 				fileBtn.addEventListener("click", () => {
 					useCurrentFile = !useCurrentFile;
 					fileBtn.classList.toggle("active", useCurrentFile);
-				});	
+				});
 
-				let processingDiv = null;
+				// Update label when image selected or cleared
+				imageInput.addEventListener('change', () => {
+					if (imageInput.files.length > 0) {
+						imageLabel.classList.add('active');
+						imageLabel.textContent = '📁 Uploaded';
+					} else {
+						imageLabel.classList.remove('active');
+						imageLabel.textContent = '📁 Upload';
+					}
+				});
 
 				function addMessage(text, sender) {
 					const wrapper = document.createElement('div');
@@ -457,56 +542,50 @@ function getWebviewContent() {
 					}
 				});
 
+				// Handle send click
 				send.onclick = async () => {
 					const text = input.value.trim();
-					const imageInput = document.getElementById('imageInput');
 					const file = imageInput.files[0];
-					let imageBase64 = null;
-					let fileContent = null;
-
 					if (!text && !file && !useCurrentFile) return;
 
-					const messageWrapper = addMessage(text || "[Image uploaded]" || "[File context attached]", 'user');
+					const messageWrapper = addMessage(text || '[Image]' || '[File]', 'user');
 
+					// Indicators
 					const indicators = [];
-					if (file) indicators.push("📁 Image attached");
-					if (useCurrentFile) indicators.push("📄 File context attached");
+					if (file) indicators.push('📁 Image');
+					if (useCurrentFile) indicators.push('📄 File');
 
-					if (indicators.length > 0) {
-						const meta = document.createElement("div");
-						meta.style.fontSize = "0.75em";
-						meta.style.color = "#999";
-						meta.style.marginTop = "0.2em";
-						meta.textContent = indicators.join(" | ");
+					if (indicators.length) {
+						const meta = document.createElement('div');
+						meta.style.fontSize = '0.75em';
+						meta.style.color = '#999';
+						meta.style.marginTop = '0.2em';
+						meta.textContent = indicators.join(' | ');
 						messageWrapper.appendChild(meta);
 					}
 
+					// Reset input & image
 					input.value = '';
 					imageInput.value = '';
-					
+					imageLabel.classList.remove('active');
+					imageLabel.textContent = '📁 Upload';
+
 					send.disabled = true;
 					send.classList.add('loading');
 
+					let imageBase64 = null;
 					if (file) {
 						imageBase64 = await toBase64(file);
 					}
 
-					try {
-						vscode.postMessage({
-							command: 'sendPrompt',
-							text,
-							image_base64: imageBase64,
-							use_file: useCurrentFile
-						});	
-					} catch (err) {
-						processingDiv.innerHTML = "Error: " + err.message;
-					}
-					send.disabled = false;
-					useCurrentFile = false; // reset toggle
-					fileBtn.classList.toggle("active", useCurrentFile);
+					vscode.postMessage({
+						command: 'sendPrompt',
+						text,
+						image_base64: imageBase64,
+						use_file: useCurrentFile
+					});
 				};
 
-				// Convert file to base64
 				function toBase64(file) {
 					return new Promise((resolve, reject) => {
 						const reader = new FileReader();
@@ -515,20 +594,18 @@ function getWebviewContent() {
 						reader.onerror = error => reject(error);
 					});
 				}
-				
+
 				input.addEventListener('keydown', (e) => {
-					if (e.key === 'Enter') send.onclick();
+					if (e.key === 'Enter' && !e.shiftKey) {
+						e.preventDefault();
+						send.onclick();
+					}
 				});
 
 				window.addEventListener('message', event => {
 					const message = event.data;
 					if (message.command === 'response') {
-						if (processingDiv) {
-							processingDiv.innerHTML = marked.parse(message.text);
-							processingDiv = null;
-						} else {
-							addMessage(message.text, 'bot');
-						}
+						addMessage(message.text, 'bot');
 						send.disabled = false;
 						send.classList.remove('loading');
 					}
@@ -546,4 +623,3 @@ module.exports = {
 	activate,
 	deactivate
 }
-
