@@ -28,7 +28,7 @@ If you wish to run it locally check out the [How to use](https://github.com/Chri
 - **Embeddings**: OpenAI
 - **Web Scraping**: Brave Search, GitHub
 - **AI Agent setup**: OpenAI, Langgraph
-- **Deployment services**: AWS EC2 (Backend), VS code maarketplace(Frontend)
+- **Deployment services**: AWS EC2 (Backend), VS code marketplace(Frontend)
 
 ---
 
@@ -86,6 +86,9 @@ This will open the vs code extension in vs codes exntension development host
 - Return the top 3 most relevant code snippets.
 - Display them as clickable options.
 - Click on any option, and VS Code will jump directly to the exact file and line in your project.
+
+### 🤖 3. AI assistant - Scraper chat
+- The AI chatbots interface is loaded and ready to use as soon as you download the extension in the bottom left corner under the timeline and outline section.
 
 ---
 
