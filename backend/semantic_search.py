@@ -44,11 +44,11 @@ async def upload_folder(payload: UploadFolderRequest):
 
         # Step 2: Create or get collection
         try:
-            client.delete_collection(name=f"{project_name}")
+            client.delete_collection(name=f"{machine_id}-{project_name}")
         except:
             pass
 
-        collection = client.create_collection(name=f"{project_name}", embedding_function=embedding_function)
+        collection = client.create_collection(name=f"{machine_id}-{project_name}", embedding_function=embedding_function)
 
         # Step 3: Split and prepare docs
         documents = []
@@ -76,6 +76,7 @@ async def upload_folder(payload: UploadFolderRequest):
             batch_metadatas = metadatas[i:i + BATCH_SIZE]
 
             collection.add(documents=batch_docs, ids=batch_ids, metadatas=batch_metadatas)
+        print(project_name)
 
         return {"status": "uploaded", "chunks": len(documents)}
 
@@ -94,7 +95,7 @@ async def semantic_search(payload: SemanticSearchRequest):
 
         client = PersistentClient(path=user_path)
 
-        collection = client.get_collection(f"{project_name}", embedding_function=embedding_function)
+        collection = client.get_collection(f"{machine_id}-{project_name}", embedding_function=embedding_function)
 
         results = collection.query(query_texts=[query], n_results=3)
 
@@ -117,4 +118,3 @@ async def semantic_search(payload: SemanticSearchRequest):
         else:
             print("Error in semantic_search:", e)
             return {"error": "An unexpected error occurred. Please try again."}
-

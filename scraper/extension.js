@@ -51,7 +51,7 @@ function activate(context) {
 				.replace(/^-+|-+$/g, ''); // remove leading/trailing dashes
 
 			try {
-				const res = await axios.post('http://34.216.243.243/semantic/semantic-search', {
+				const res = await axios.post('http://localhost:8000/semantic/semantic-search', {
 					machineId,
 					projectName,
 					query
@@ -183,7 +183,7 @@ function activate(context) {
 
 					readFilesRecursively(rootPath, files);
 
-					await axios.post('http://34.216.243.243/semantic/upload-folder', {
+					await axios.post('http://localhost:8000/semantic/upload-folder', {
 						machineId,
 						projectName,
 						files
@@ -225,7 +225,7 @@ class ScraperChatViewProvider {
 				}
 
 				try {
-					const response = await axios.post('http://34.216.243.243/chat', {
+					const response = await axios.post('http://localhost:8000/chat', {
 						prompt: text,
 						image_base64: image_base64,
 						file_context: file_context
