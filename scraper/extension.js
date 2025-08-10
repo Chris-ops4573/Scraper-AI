@@ -212,41 +212,68 @@ class ScraperChatViewProvider {
 			enableScripts: true
 		};
 
+		const pendingControllers = new Map(); // requestId -> AbortController
+
 		webviewView.webview.onDidReceiveMessage(async (message) => {
 			if (message.command === 'sendPrompt') {
-				let { text, image_base64, use_file } = message;
+				let { requestId, text, image_base64, use_file } = message;
 				let file_context = null;
 
 				if (use_file) {
-					const activeEditor = vscode.window.activeTextEditor;
-					if (activeEditor) {
-						file_context = activeEditor.document.getText();
-					}
+				const activeEditor = vscode.window.activeTextEditor;
+				if (activeEditor) {
+					file_context = activeEditor.document.getText();
+				}
 				}
 
 				try {
-					const response = await axios.post('http://localhost:8000/chat', {
-						prompt: text,
-						image_base64: image_base64,
-						file_context: file_context
-					});
+					const controller = new AbortController();
+					pendingControllers.set(requestId, controller);
 
+					const response = await axios.post(
+						'http://localhost:8000/chat',
+						{ prompt: text, image_base64, file_context },
+						{ signal: controller.signal }
+					);
+
+					pendingControllers.delete(requestId);
+
+					// Send back with the same requestId so the webview can match/ignore
 					webviewView.webview.postMessage({
 						command: 'response',
+						requestId,
 						text: response.data.reply
 					});
 				} catch (err) {
-					if (err.code === 'ENOTFOUND' || err.message.includes('getaddrinfo')) {
+					pendingControllers.delete(requestId);
+
+					// If user canceled, axios throws a cancel/abort error. Don't post any reply.
+					if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED' || ('' + err.message).toLowerCase().includes('aborted')) {
+						return; // swallow silently — webview already reverted UI
+					}
+
+					if (err.code === 'ENOTFOUND' || ('' + err.message).includes('getaddrinfo')) {
 						webviewView.webview.postMessage({
-							command: 'response',
-							text: 'Backend not live. Please try again later'
+						command: 'response',
+						requestId,
+						text: 'Backend not live. Please try again later'
 						});
-					} else{
-						webviewView.webview.postMessage({	
-							command: 'response',
-							text: 'Error: ' + err.message
+					} else {
+						webviewView.webview.postMessage({
+						command: 'response',
+						requestId,
+						text: 'Error: ' + err.message
 						});
 					}
+				}
+			}
+
+			else if (message.command === 'cancelPrompt') {
+				const { requestId } = message;
+				const controller = pendingControllers.get(requestId);
+				if (controller) {
+				controller.abort();
+				pendingControllers.delete(requestId);
 				}
 			}
 		});
@@ -438,9 +465,10 @@ function getWebviewContent() {
 				#send:hover { transform: scale(1.05); background: linear-gradient(to right, var(--accent-dark), var(--accent)); }
 				#send.loading {
 				position: relative;
-				color: transparent;
-				pointer-events: none;
+				color: transparent; /* keep spinner visible via ::after */
+				cursor: pointer;
 				}
+
 				#send.loading::after {
 				content: '';
 				position: absolute;
@@ -490,6 +518,12 @@ function getWebviewContent() {
 				const imageInput = document.getElementById('imageInput');
 				const imageLabel = document.getElementById('imageLabel');
 				let useCurrentFile = false;
+				let activeRequestId = null;
+				const canceledRequests = new Set();
+
+				function genId() {
+				return (crypto?.randomUUID?.() || Math.random().toString(36).slice(2)) + Date.now().toString(36);
+				}
 
 				// Toggle file context
 				const fileBtn = document.getElementById("fileContextBtn");
@@ -544,17 +578,28 @@ function getWebviewContent() {
 
 				// Handle send click
 				send.onclick = async () => {
+					// If currently loading, treat click as "cancel"
+					if (send.classList.contains('loading') && activeRequestId) {
+						canceledRequests.add(activeRequestId);
+						vscode.postMessage({ command: 'cancelPrompt', requestId: activeRequestId });
+						activeRequestId = null;
+
+						// revert UI
+						send.classList.remove('loading');
+						send.textContent = 'Send';   // show label again
+						return;
+					}
+
 					const text = input.value.trim();
 					const file = imageInput.files[0];
 					if (!text && !file && !useCurrentFile) return;
 
 					const messageWrapper = addMessage(text || '[Image]' || '[File]', 'user');
 
-					// Indicators
+					// indicators 
 					const indicators = [];
 					if (file) indicators.push('📁 Image');
 					if (useCurrentFile) indicators.push('📄 File');
-
 					if (indicators.length) {
 						const meta = document.createElement('div');
 						meta.style.fontSize = '0.75em';
@@ -564,27 +609,28 @@ function getWebviewContent() {
 						messageWrapper.appendChild(meta);
 					}
 
-					// Reset input & image
+					// reset inputs
 					input.value = '';
 					imageInput.value = '';
 					imageLabel.classList.remove('active');
 					imageLabel.textContent = '📁 Upload';
 
-					send.disabled = true;
+					activeRequestId = genId();
 					send.classList.add('loading');
+					send.textContent = ''; // spinner shows via CSS ::after
 
 					let imageBase64 = null;
-					if (file) {
-						imageBase64 = await toBase64(file);
-					}
+					if (file) imageBase64 = await toBase64(file);
 
 					vscode.postMessage({
 						command: 'sendPrompt',
+						requestId: activeRequestId,
 						text,
 						image_base64: imageBase64,
 						use_file: useCurrentFile
 					});
 				};
+
 
 				function toBase64(file) {
 					return new Promise((resolve, reject) => {
@@ -605,11 +651,22 @@ function getWebviewContent() {
 				window.addEventListener('message', event => {
 					const message = event.data;
 					if (message.command === 'response') {
-						addMessage(message.text, 'bot');
-						send.disabled = false;
+						const { requestId, text } = message;
+
+						// If this response was canceled or it's not the active one anymore, ignore it.
+						if (requestId && (canceledRequests.has(requestId) || requestId !== activeRequestId)) {
+						return;
+						}
+
+						addMessage(text, 'bot');
+
+						// clear loading state
+						activeRequestId = null;
 						send.classList.remove('loading');
+						send.textContent = 'Send';
 					}
 				});
+
 			</script>
 		</body>
 	</html>
