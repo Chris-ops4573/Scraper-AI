@@ -203,27 +203,56 @@ function activate(context) {
 }
 
 class ScraperChatViewProvider {
-	constructor(context) {
-		this.context = context;
-	}
+  constructor(context) {
+    this.context = context;
+    this.webviewView = null;                
+    this._currentSelectionText = null;      
+    this._lastSelectionMeta = null;          
+  }
 
 	resolveWebviewView(webviewView) {
-		webviewView.webview.options = {
-			enableScripts: true
-		};
+    	this.webviewView = webviewView;     
+		    // 🔔 selection watcher
+		this.context.subscriptions.push(
+			vscode.window.onDidChangeTextEditorSelection(e => {
+				const editor = e.textEditor;
+				if (!editor || editor.document.isClosed) return;
+
+				const sel = editor.selection;
+				const hasSelection = !sel.isEmpty;
+				let lineCount = 0;
+
+				if (hasSelection) {
+					this._currentSelectionText = editor.document.getText(sel);
+					lineCount = sel.end.line - sel.start.line + 1;
+				} else {
+					this._currentSelectionText = null;
+				}
+
+				const meta = { command: 'selectionUpdate', hasSelection, lineCount };
+				if (JSON.stringify(meta) !== JSON.stringify(this._lastSelectionMeta)) {
+					this._lastSelectionMeta = meta;
+					try { this.webviewView?.webview.postMessage(meta); } catch {}
+				}
+			})
+		);
+     
+    	webviewView.webview.options = { enableScripts: true };
 
 		const pendingControllers = new Map(); // requestId -> AbortController
 
 		webviewView.webview.onDidReceiveMessage(async (message) => {
 			if (message.command === 'sendPrompt') {
-				let { requestId, text, image_base64, use_file } = message;
+				let { requestId, text, image_base64, use_file, include_selection } = message; // 👈 new flag
 				let file_context = null;
+				let selection_text = null;
 
 				if (use_file) {
-				const activeEditor = vscode.window.activeTextEditor;
-				if (activeEditor) {
-					file_context = activeEditor.document.getText();
+					const activeEditor = vscode.window.activeTextEditor;
+					if (activeEditor) file_context = activeEditor.document.getText();
 				}
+				if (include_selection) {
+					selection_text = this._currentSelectionText || null; // 👈 attach only if opted in
 				}
 
 				try {
@@ -232,38 +261,19 @@ class ScraperChatViewProvider {
 
 					const response = await axios.post(
 						'http://localhost:8000/chat',
-						{ prompt: text, image_base64, file_context },
+						{ prompt: text, image_base64, file_context, selection_text}, // 👈 send it
 						{ signal: controller.signal }
 					);
 
 					pendingControllers.delete(requestId);
-
-					// Send back with the same requestId so the webview can match/ignore
-					webviewView.webview.postMessage({
-						command: 'response',
-						requestId,
-						text: response.data.reply
-					});
+					webviewView.webview.postMessage({ command: 'response', requestId, text: response.data.reply });
 				} catch (err) {
 					pendingControllers.delete(requestId);
-
-					// If user canceled, axios throws a cancel/abort error. Don't post any reply.
-					if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED' || ('' + err.message).toLowerCase().includes('aborted')) {
-						return; // swallow silently — webview already reverted UI
-					}
-
+					if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED' || ('' + err.message).toLowerCase().includes('aborted')) return;
 					if (err.code === 'ENOTFOUND' || ('' + err.message).includes('getaddrinfo')) {
-						webviewView.webview.postMessage({
-						command: 'response',
-						requestId,
-						text: 'Backend not live. Please try again later'
-						});
+						webviewView.webview.postMessage({ command: 'response', requestId, text: 'Backend not live. Please try again later' });
 					} else {
-						webviewView.webview.postMessage({
-						command: 'response',
-						requestId,
-						text: 'Error: ' + err.message
-						});
+						webviewView.webview.postMessage({ command: 'response', requestId, text: 'Error: ' + err.message });
 					}
 				}
 			}
@@ -333,6 +343,45 @@ function getWebviewContent() {
 				#chat::-webkit-scrollbar { width: 8px; }
 				#chat::-webkit-scrollbar-track { background: transparent; }
 				#chat::-webkit-scrollbar-thumb { background-color: var(--border); border-radius: 4px; }
+
+				/* Top toolbar */
+				#toolbar {
+				position: sticky;
+				top: 0;
+				z-index: 2;
+				display: flex;
+				justify-content: flex-end;
+				align-items: center;
+				gap: .5rem;
+				padding: .6rem 1rem;
+				background: linear-gradient(to bottom, rgba(18,18,18,0.9), rgba(18,18,18,0.6));
+				border-bottom: 1px solid var(--border);
+				}
+
+				/* Reuse .file-toggle look for selection toggle */
+				#selectionToggle {
+				border: 1px solid #444;
+				background: #1f1f1f;
+				color: var(--text-secondary);
+				padding: 0.45em 0.9em;
+				border-radius: 1em;
+				font-size: 0.9em;
+				font-weight: bold;
+				cursor: pointer;
+				transition: background 0.3s, color 0.3s, transform 0.2s;
+				}
+				#selectionToggle:hover,
+				#selectionToggle.active {
+				background: var(--accent);
+				color: #fff;
+				border: none;
+				transform: scale(1.05);
+				}
+
+				#selectionMeta {
+				font-size: .85em;
+				color: #999;
+				}
 
 				/* Message bubbles */
 				.message-wrapper {
@@ -501,6 +550,10 @@ function getWebviewContent() {
 			</style>
 		</head>
 		<body>
+			<div id="toolbar">
+				<button id="selectionToggle" style="display:none;">📎 Attach selected code as context</button>
+				<span id="selectionMeta" style="display:none;"></span>
+			</div>
 			<div id="chat"></div>
 			<div id="input-area">
 				<textarea id="input" placeholder="Type your prompt..." autocomplete="off"></textarea>
@@ -520,6 +573,45 @@ function getWebviewContent() {
 				let useCurrentFile = false;
 				let activeRequestId = null;
 				const canceledRequests = new Set();
+				let includeSelection = false; // 👈 new flag
+				const selectionToggle = document.getElementById('selectionToggle');
+				const selectionMeta = document.getElementById('selectionMeta');
+
+				selectionToggle.addEventListener('click', () => {
+					includeSelection = !includeSelection;
+					selectionToggle.classList.toggle('active', includeSelection);
+				});
+
+				// Receive selection meta from extension
+				window.addEventListener('message', event => {
+					const message = event.data;
+					if (message.command === 'selectionUpdate') {
+						if (message.hasSelection) {
+							selectionToggle.style.display = 'inline-block';
+							selectionMeta.style.display = 'inline-block';
+							selectionMeta.textContent = '(' + message.lineCount + ' line' + (message.lineCount === 1 ? '' : 's') + ')';
+
+							includeSelection = true;
+							selectionToggle.classList.add('active');
+						} else {
+							includeSelection = false;
+							selectionToggle.classList.remove('active');
+							selectionToggle.style.display = 'none';
+							selectionMeta.style.display = 'none';
+						}
+						return; // don't fall through
+					}
+
+					if (message.command === 'response') {
+						const { requestId, text } = message;
+						if (requestId && (canceledRequests.has(requestId) || requestId !== activeRequestId)) return;
+						addMessage(text, 'bot');
+						activeRequestId = null;
+						send.classList.remove('loading');
+						send.textContent = 'Send';
+					}
+				});
+
 
 				function genId() {
 				return (crypto?.randomUUID?.() || Math.random().toString(36).slice(2)) + Date.now().toString(36);
@@ -626,8 +718,9 @@ function getWebviewContent() {
 						command: 'sendPrompt',
 						requestId: activeRequestId,
 						text,
-						image_base64: imageBase64,
-						use_file: useCurrentFile
+						image_base64: imageBase64,	
+						use_file: useCurrentFile,
+						include_selection: includeSelection   
 					});
 				};
 
@@ -647,26 +740,6 @@ function getWebviewContent() {
 						send.onclick();
 					}
 				});
-
-				window.addEventListener('message', event => {
-					const message = event.data;
-					if (message.command === 'response') {
-						const { requestId, text } = message;
-
-						// If this response was canceled or it's not the active one anymore, ignore it.
-						if (requestId && (canceledRequests.has(requestId) || requestId !== activeRequestId)) {
-						return;
-						}
-
-						addMessage(text, 'bot');
-
-						// clear loading state
-						activeRequestId = null;
-						send.classList.remove('loading');
-						send.textContent = 'Send';
-					}
-				});
-
 			</script>
 		</body>
 	</html>

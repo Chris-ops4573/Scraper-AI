@@ -199,25 +199,42 @@ chat_graph = builder.compile(checkpointer=memory)
 @app.post("/chat")
 async def chat(request: Request):
     data = await request.json()
-    user_message = data.get("prompt", "")
-    image_base64 = data.get("image_base64")
-    file_content = data.get("file_context")
+    user_message   = data.get("prompt", "") or ""
+    image_base64   = data.get("image_base64")
+    file_content   = data.get("file_context")
+    selected_text  = data.get("selection_text")   
 
-    vision_input = VisionInput(image_base64=image_base64, prompt=user_message if user_message else "Describe this image.")
+    vision_input = VisionInput(
+        image_base64=image_base64,
+        prompt=user_message if user_message else "Describe this image."
+    )
 
     messages = [SystemMessage(content=SYSTEM_PROMPT)]
 
+    # 1) Base user prompt (or image description request)
     if image_base64:
         vision_result = vision_analyze(vision_input)
-        messages.append(HumanMessage(content=f"{user_message if user_message else 'Describe this image.'}"))
-        messages.append(HumanMessage(content=f"Image Analysis: {vision_result}"))
-        if file_content:
-            messages.append(HumanMessage(content=f"Code Context:\n{file_content}"))
+        messages.append(HumanMessage(content=user_message or "Describe this image."))
+        messages.append(HumanMessage(content=f"Image Analysis:\n{vision_result}"))
     else:
-        messages.append(HumanMessage(content=user_message if user_message else ""))
-        if file_content:
-            messages.append(HumanMessage(content=f"Code Context:\n{file_content}"))
+        messages.append(HumanMessage(content=user_message))
 
+    # 2) Attach contexts — selected snippet first (higher intent), then file-wide context
+    if selected_text:
+        messages.append(HumanMessage(
+            content="Selected Code Context:\n```\n" + selected_text + "\n```"
+        ))
+
+    if file_content:
+        messages.append(HumanMessage(
+            content="File Context:\n```\n" + file_content + "\n```"
+        ))
+
+    # (Optional) tiny nudge so the model prefers the selection if both exist
+    if selected_text and file_content:
+        messages.append(HumanMessage(
+            content="If both contexts conflict, prioritize the Selected Code Context."
+        ))
 
     try:
         result = chat_graph.invoke({"messages": messages}, config={"configurable": {"thread_id": "1"}})
