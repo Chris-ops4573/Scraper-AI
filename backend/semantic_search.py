@@ -1,11 +1,10 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import os
-import shutil
+import uuid
 from tqdm import tqdm
 from chromadb import PersistentClient
-from chromadb.config import Settings
 from chromadb.utils.embedding_functions import OpenAIEmbeddingFunction
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
@@ -21,7 +20,9 @@ class FileData(BaseModel):
 class UploadFolderRequest(BaseModel):
     machineId: str
     projectName: str
-    files: List[FileData]
+    files: List[FileData]                    # for full upload OR changed files for incremental
+    incremental: Optional[bool] = False      # False = full rebuild, True = upsert changed files
+    deleted: Optional[List[str]] = []        # list of file paths to delete from the collection
 
 class SemanticSearchRequest(BaseModel):
     machineId: str
@@ -31,54 +32,108 @@ class SemanticSearchRequest(BaseModel):
 # ---------- Embedding Setup ----------
 embedding_function = OpenAIEmbeddingFunction(api_key=os.environ["OPENAI_API_KEY"])
 
-# ---------- Upload Folder ----------
+# ---------- Classic 500/150 splitter in 20-line windows ----------
+SPLITTER = RecursiveCharacterTextSplitter(
+    chunk_size=500,
+    chunk_overlap=150,
+)
+
+def classic_500_chunks(content: str):
+    content = content or ""
+    lines = content.splitlines()
+    for i in range(0, len(lines), 20):
+        block = "\n".join(lines[i:i + 20])
+        docs = SPLITTER.split_text(block)
+        for doc in docs:
+            yield doc, (i + 1)
+
+# ---------- Upload Folder (full or incremental) ----------
 @router.post("/upload-folder")
 async def upload_folder(payload: UploadFolderRequest):
     try:
-        machine_id = payload.machineId
-        files = payload.files
+        machine_id   = payload.machineId
         project_name = payload.projectName
+        files        = payload.files or []
+        deleted      = payload.deleted or []
+        incremental  = bool(payload.incremental)
+
         user_path = f"./chroma_db/{machine_id}"
+        coll_name = f"{machine_id}-{project_name}"
 
         client = PersistentClient(path=user_path)
 
-        # Step 2: Create or get collection
+        if not incremental:
+            # -------- FULL REBUILD --------
+            try:
+                client.delete_collection(name=coll_name)
+            except Exception:
+                pass
+
+            collection = client.create_collection(
+                name=coll_name,
+                embedding_function=embedding_function
+            )
+
+            documents, metadatas, ids = [], [], []
+
+            for f in files:
+                for ch, line_start in classic_500_chunks(f.content):
+                    documents.append(ch)
+                    metadatas.append({
+                        "file_path":  f.path,
+                        "line_start": line_start,
+                    })
+                    ids.append(str(uuid.uuid4()))
+
+            for i in tqdm(range(0, len(documents), BATCH_SIZE)):
+                collection.add(
+                    documents=documents[i:i + BATCH_SIZE],
+                    metadatas=metadatas[i:i + BATCH_SIZE],
+                    ids=ids[i:i + BATCH_SIZE]
+                )
+
+            return {"status": "uploaded_full", "chunks": len(documents)}
+
+        # -------- INCREMENTAL UPSERT --------
+        # Ensure collection exists
         try:
-            client.delete_collection(name=f"{machine_id}-{project_name}")
-        except:
-            pass
+            collection = client.get_collection(coll_name, embedding_function=embedding_function)
+        except Exception:
+            collection = client.create_collection(coll_name, embedding_function=embedding_function)
 
-        collection = client.create_collection(name=f"{machine_id}-{project_name}", embedding_function=embedding_function)
+        # 1) Delete removed files entirely
+        for rel_path in deleted:
+            collection.delete(where={"file_path": rel_path})
 
-        # Step 3: Split and prepare docs
-        documents = []
-        metadatas = []
-        ids = []
+        # 2) For each changed/new file: delete old chunks for that path, then add new chunks
+        total_added = 0
+        for f in files:
+            # remove old chunks for this file
+            collection.delete(where={"file_path": f.path})
 
-        splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=150)
+            documents, metadatas, ids = [], [], []
+            for ch, line_start in classic_500_chunks(f.content):
+                documents.append(ch)
+                metadatas.append({
+                    "file_path":  f.path,
+                    "line_start": line_start,
+                })
+                ids.append(str(uuid.uuid4()))
 
-        uid = 0
-        for file in files:
-            lines = file.content.splitlines()
-            for i in range(0, len(lines), 20):
-                chunk = "\n".join(lines[i:i + 20])
-                docs = splitter.split_text(chunk)
-                for doc in docs:
-                    documents.append(doc)
-                    metadatas.append({"file_path": file.path, "line_start": i + 1})
-                    ids.append(f"{machine_id}-{uid}")
-                    uid += 1
+            for i in range(0, len(documents), BATCH_SIZE):
+                collection.add(
+                    documents=documents[i:i + BATCH_SIZE],
+                    metadatas=metadatas[i:i + BATCH_SIZE],
+                    ids=ids[i:i + BATCH_SIZE]
+                )
+            total_added += len(documents)
 
-        # Step 4: Batch add to Chroma
-        for i in tqdm(range(0, len(documents), BATCH_SIZE)):
-            batch_docs = documents[i:i + BATCH_SIZE]
-            batch_ids = ids[i:i + BATCH_SIZE]
-            batch_metadatas = metadatas[i:i + BATCH_SIZE]
-
-            collection.add(documents=batch_docs, ids=batch_ids, metadatas=batch_metadatas)
-        print(project_name)
-
-        return {"status": "uploaded", "chunks": len(documents)}
+        return {
+            "status": "uploaded_incremental",
+            "changed_files": len(files),
+            "deleted_files": len(deleted),
+            "chunks_added": total_added
+        }
 
     except Exception as e:
         print("Error in upload_folder:", e)

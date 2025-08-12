@@ -2,6 +2,8 @@ const vscode = require('vscode');
 const axios = require('axios'); // Add axios to your dependencies
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto'); // Node.js crypto module for hashing
+
 /**
  * @param {vscode.ExtensionContext} context
  */
@@ -117,6 +119,10 @@ function activate(context) {
 		})
 	);
 
+	function sha256(s) {
+  		return crypto.createHash('sha256').update(s).digest('hex');
+	}
+
 	context.subscriptions.push(
 		vscode.commands.registerCommand('scraper.uploadProjectToAgent', async () => {
 			const folders = vscode.workspace.workspaceFolders;
@@ -127,75 +133,89 @@ function activate(context) {
 
 			const rootPath = folders[0].uri.fsPath;
 			let projectName = path.basename(rootPath);
+			projectName = projectName.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/^-+|-+$/g, '');
 
-			// Sanitize projectName to meet backend validation requirements
-			projectName = projectName
-				.replace(/[^a-zA-Z0-9._-]/g, '-') // replace invalid characters with '-'
-				.replace(/^-+|-+$/g, ''); // remove leading/trailing dashes
+			const IGNORED_DIRS = ['node_modules', '.git', 'dist', 'build', '.next', '.vscode', '.venv', '__pycache__', 'env', 'target', 'out', 'bin', 'logs'];
+			const ALLOWED_EXTENSIONS = ['.js', '.ts', '.jsx', '.tsx', '.json', '.html', '.py', '.env', '.java', '.xml', '.properties'];
+			const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
 
-			vscode.window.withProgress({
+			function shouldIncludeFile(filePath) {
+			const ext = path.extname(filePath);
+			const base = path.basename(filePath);
+			return (base === 'package.json' || base === '.env') ||
+					(ALLOWED_EXTENSIONS.includes(ext) && base !== 'package-lock.json');
+			}
+
+			function readFilesRecursively(dir, out) {
+				const entries = fs.readdirSync(dir, { withFileTypes: true });
+				for (const entry of entries) {
+					const full = path.join(dir, entry.name);
+					if (entry.isDirectory()) {
+						if (IGNORED_DIRS.includes(entry.name)) continue;
+							readFilesRecursively(full, out);
+					} else if (entry.isFile()) {
+						if (!shouldIncludeFile(full)) continue;
+						const stats = fs.statSync(full);
+						if (stats.size >= MAX_FILE_SIZE) continue;
+						const rel = path.relative(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', full);
+						const content = fs.readFileSync(full, 'utf-8');
+						out.push({ path: rel, content });
+					}
+				}
+			}
+
+			// manifest (per machine+project) lives in globalState
+			const manifestKey = `scraper.manifest:${machineId}:${projectName}`;
+			const prevManifest = context.globalState.get(manifestKey) || {};
+
+			const all = [];
+			readFilesRecursively(rootPath, all);
+
+			// build current snapshot and diff vs manifest
+			const currentManifest = {};
+			const changedFiles = [];
+			for (const f of all) {
+				const h = sha256(f.content);
+				currentManifest[f.path] = h;
+				if (prevManifest[f.path] !== h) {
+					// only send changed/new
+					changedFiles.push({ path: f.path, content: f.content, hash: h });
+				}
+			}
+			const deletedFiles = Object.keys(prevManifest).filter(p => !(p in currentManifest));
+
+			const incremental = Object.keys(prevManifest).length > 0;
+
+			if (incremental && changedFiles.length === 0 && deletedFiles.length === 0) {
+				vscode.window.showInformationMessage("No changes detected — nothing to upload.");
+				return;
+			}
+
+			await vscode.window.withProgress({
 				location: vscode.ProgressLocation.Notification,
-				title: "Uploading project to agent, this may take a while...",
-				cancellable: true
-			}, async (progress) => {
+				title: incremental ? "Syncing changes to agent..." : "Uploading project to agent...",
+				cancellable: false
+			}, async () => {
 				try {
-					const files = [];
-
-					const IGNORED_DIRS = [
-						'node_modules', '.git', 'dist', 'build', '.next', '.vscode', '.venv', '__pycache__', 'env', 'target', 'out', 'bin', 'logs'
-					];
-					const ALLOWED_EXTENSIONS = [
-						'.js', '.ts', '.jsx', '.tsx', '.json', '.html', '.py', '.env', '.java', '.xml', '.properties'
-					];
-					const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2 MB
-
-					function shouldIncludeFile(filePath) {
-						const ext = path.extname(filePath);
-						const baseName = path.basename(filePath);
-						return (
-							(baseName === 'package.json' || baseName === '.env') ||
-							(ALLOWED_EXTENSIONS.includes(ext) && baseName !== 'package-lock.json')
-						);
-					}
-
-					function readFilesRecursively(dir, files) {
-						const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-						for (const entry of entries) {
-							const fullPath = path.join(dir, entry.name);
-							const relativePath = path.relative(vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '', fullPath);
-
-							if (entry.isDirectory() && IGNORED_DIRS.includes(entry.name)) continue;
-
-							if (entry.isDirectory()) {
-								readFilesRecursively(fullPath, files);
-							} else if (entry.isFile()) {
-								if (shouldIncludeFile(fullPath)) {
-									const stats = fs.statSync(fullPath);
-									if (stats.size < MAX_FILE_SIZE) {
-										const content = fs.readFileSync(fullPath, 'utf-8');
-										files.push({ path: relativePath, content });
-									}
-								}
-							}
-						}
-					}
-
-					readFilesRecursively(rootPath, files);
-
 					await axios.post('http://localhost:8000/semantic/upload-folder', {
-						machineId,
-						projectName,
-						files
+					machineId,
+					projectName,
+					incremental,         // 👈 tell backend this is an upsert
+					files: changedFiles, // only changed/new
+					deleted: deletedFiles
 					});
 
-					vscode.window.showInformationMessage("✅ Project uploaded to agent successfully.");
+					// persist new manifest on success
+					await context.globalState.update(manifestKey, currentManifest);
+					vscode.window.showInformationMessage(incremental
+					? `✅ Synced: ${changedFiles.length} changed, ${deletedFiles.length} deleted.`
+					: `✅ Uploaded ${all.length} files.`);
 				} catch (err) {
-					if (err.code === 'ENOTFOUND' || err.message.includes('awseb') || err.message.includes('getaddrinfo')) {
-						vscode.window.showErrorMessage("Backend not live. Please try again later.");
+					if (err.code === 'ENOTFOUND' || ('' + err.message).includes('getaddrinfo')) {
+					vscode.window.showErrorMessage("Backend not live. Please try again later.");
 					} else {
-						vscode.window.showErrorMessage("Upload failed: " + err.message);
-				}
+					vscode.window.showErrorMessage("Upload failed: " + err.message);
+					}
 				}
 			});
 		})
