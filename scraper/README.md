@@ -1,65 +1,64 @@
-# scraper README
+# Code Assistant & Semantic Search VS Code Extension
 
-This is the README for your extension "scraper". After writing up a brief description, we recommend including the following sections.
+A powerful VS Code extension that brings AI-assisted coding and semantic search across your project files directly into your editor.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+### 🤖 AI Code Assistant
 
-For example if there is an image subfolder under your extension project workspace:
+- Ask questions and get intelligent code suggestions directly in the editor.
+- Generate, review, and explain code using AI
+- Get context-aware help for debugging, optimization, and code understanding based on your editor and repos uploading to/out long parts directly out what or upload from Gcode
 
-\!\[feature X\]\(images/feature-x.png\)
+### 🔍 Semantic Search
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+- Search across your entire codebase using semantic meaning, not just keywords.
+- Supports fuzzy matches and related code discovery.
+- Instant navigation to relevant files and code snippets.
 
 ## Requirements
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
-
-## Extension Settings
-
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
-
-For example:
-
-This extension contributes the following settings:
-
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+- Visual Studio Code version 1.60.0 or higher
+- An active internet connection when the AI coding assistant is available (not required to install).
+- To start using the semantic file search, upload your current project folder by using the command palette and clicking Upload Project to Agent. Then you can open the command palette and select semantic file search to start navigating through your codebase.
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- Large repositories might take longer to index for semantic search.
+- AI coding assistant has no context from previous chats, but has all the context in upcoming updates of the extension.
 
 ## Release Notes
 
-Users appreciate release notes as you update your extension.
+### 0.0.0
+
+Initial release of the Code Assistant & Semantic Search extension.
+
+Key features:
+- AI-powered inline chat for code generation, explanation, and refactoring.
+- Full project semantic search to find code by meaning, not just text.
+- Configurable API endpoint and settings for flexible backend integration.
+- Smooth navigation to relevant files and code snippets.
+
+### 0.0.5
+
+Key features:
+- Updated folder upload logic, ignored more folders for decreasing payload size
+- Improved file navigation
 
 ### 1.0.0
 
-Initial release of ...
+Key updates:
+- Backend hosted on a different instance
+- Layout changes
 
-### 1.0.1
+### 1.0.5
+Key updates:
+- Improved message handling logic
+- Request gets cancelled if spinner is clicked again
+- Additional code context depending on selected text
 
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code.  Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux)
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux)
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+### 1.0.7
+Updated project uploading logic:
+- Using ssh-256 hashing to detects changes in files compared to old uploads and only uploads files that change.
+- Updates users on backend folder updates.
+- Added uploaded folder deletion logic.

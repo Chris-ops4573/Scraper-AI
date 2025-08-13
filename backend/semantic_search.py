@@ -29,6 +29,10 @@ class SemanticSearchRequest(BaseModel):
     projectName: str
     query: str
 
+class DeleteProjectRequest(BaseModel):
+    machineId: str
+    projectName: str
+
 # ---------- Embedding Setup ----------
 embedding_function = OpenAIEmbeddingFunction(api_key=os.environ["OPENAI_API_KEY"])
 
@@ -173,3 +177,29 @@ async def semantic_search(payload: SemanticSearchRequest):
         else:
             print("Error in semantic_search:", e)
             return {"error": "An unexpected error occurred. Please try again."}
+
+@router.post("/delete-project")
+async def delete_project(payload: DeleteProjectRequest):
+    try:
+        machine_id   = payload.machineId
+        project_name = payload.projectName
+
+        user_path = f"./chroma_db/{machine_id}"
+        coll_name = f"{machine_id}-{project_name}"
+
+        client = PersistentClient(path=user_path)
+
+        # Chroma raises if the collection doesn't exist
+        try:
+            client.delete_collection(name=coll_name)
+            return {"status": "deleted", "projectName": project_name}
+        except Exception as e:
+            msg = str(e).lower()
+            # Treat "not found" as a graceful outcome so UX stays simple
+            if "not found" in msg or "no collection" in msg or "does not exist" in msg:
+                return {"status": "not_found", "projectName": project_name}
+            raise
+
+    except Exception as e:
+        print("Error in delete_project:", e)
+        return {"error": "Unable to delete project. " + str(e)}

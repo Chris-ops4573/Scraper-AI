@@ -3,7 +3,7 @@
   "displayName": "scraper-AI",
   "icon": "media/icon.png",
   "description": "",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "publisher": "Christine-devops1234",
   "engines": {
     "vscode": "^1.101.0"
@@ -15,7 +15,8 @@
     "onView:scraper.chatView",
     "onCommand:scraper.scrapeForCode",
     "onCommand:scraper.semanticSearch",
-    "onCommand:scraper.uploadProjectToAgent"
+    "onCommand:scraper.uploadProjectToAgent",
+    "onCommand:scraper.deleteProjectFromAgent"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -31,6 +32,10 @@
       {
         "command": "scraper.uploadProjectToAgent",
         "title": "Upload Project to Agent"
+      },
+      {
+        "command": "scraper.deleteProjectFromAgent",     
+        "title": "Delete Project from Agent"
       }
     ],
     "viewsContainers": {},
