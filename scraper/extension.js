@@ -53,7 +53,7 @@ function activate(context) {
 				.replace(/^-+|-+$/g, ''); // remove leading/trailing dashes
 
 			try {
-				const res = await axios.post('http://localhost:8000/semantic/semantic-search', {
+				const res = await axios.post('http://35.164.75.62:8080/semantic/semantic-search', {
 					machineId,
 					projectName,
 					query
@@ -197,12 +197,12 @@ function activate(context) {
 				cancellable: false
 			}, async () => {
 				try {
-					await axios.post('http://localhost:8000/semantic/upload-folder', {
-					machineId,
-					projectName,
-					incremental,         // 👈 tell backend this is an upsert
-					files: changedFiles, // only changed/new
-					deleted: deletedFiles
+					await axios.post('http://35.164.75.62:8080/semantic/upload-folder', {
+						machineId,
+						projectName,
+						incremental,         // 👈 tell backend this is an upsert
+						files: changedFiles, // only changed/new
+						deleted: deletedFiles
 					});
 
 					// persist new manifest on success
@@ -215,6 +215,61 @@ function activate(context) {
 					vscode.window.showErrorMessage("Backend not live. Please try again later.");
 					} else {
 					vscode.window.showErrorMessage("Upload failed: " + err.message);
+					}
+				}
+			});
+		})
+	);
+
+	context.subscriptions.push(
+		vscode.commands.registerCommand('scraper.deleteProjectFromAgent', async () => {
+			const folders = vscode.workspace.workspaceFolders;
+			if (!folders || folders.length === 0) {
+				vscode.window.showErrorMessage("No folder is open in VS Code.");
+				return;
+			}
+
+			const rootPath = folders[0].uri.fsPath;
+			let projectName = path.basename(rootPath);
+			projectName = projectName.replace(/[^a-zA-Z0-9._-]/g, '-').replace(/^-+|-+$/g, '');
+
+			const manifestKey = `scraper.manifest:${machineId}:${projectName}`;
+
+			const choice = await vscode.window.showWarningMessage(
+				`Delete project "${projectName}" from the agent? This will also clear your local manifest so it's like you never uploaded.`,
+				{ modal: true },
+				"Delete"
+			);
+			if (choice !== "Delete") return;
+
+			await vscode.window.withProgress({
+				location: vscode.ProgressLocation.Notification,
+				title: `Deleting "${projectName}" from agent...`,
+				cancellable: false
+			}, async () => {
+				try {
+					const res = await axios.post('http://35.164.75.62:8080/semantic/delete-project', {
+						machineId,
+						projectName
+					});
+
+					// Always clear local manifest so next upload is a full rebuild
+					await context.globalState.update(manifestKey, undefined);
+
+					if (res.data?.status === 'deleted') {
+						vscode.window.showInformationMessage(`🗑️ Deleted "${projectName}" from agent.`);
+					} else if (res.data?.status === 'not_found') {
+						vscode.window.showInformationMessage(`Nothing to delete on agent for "${projectName}".`);
+					} else if (res.data?.error) {
+						vscode.window.showErrorMessage(`Delete failed: ${res.data.error}`);
+					} else {
+						vscode.window.showInformationMessage(`Delete completed.`);
+					}
+				} catch (err) {
+					if (err.code === 'ENOTFOUND' || ('' + err.message).includes('getaddrinfo')) {
+						vscode.window.showErrorMessage("Backend not live. Please try again later.");
+					} else {
+						vscode.window.showErrorMessage("Delete failed: " + err.message);
 					}
 				}
 			});
@@ -280,7 +335,7 @@ class ScraperChatViewProvider {
 					pendingControllers.set(requestId, controller);
 
 					const response = await axios.post(
-						'http://localhost:8000/chat',
+						'http://35.164.75.62:8080/chat',
 						{ prompt: text, image_base64, file_context, selection_text}, // 👈 send it
 						{ signal: controller.signal }
 					);
