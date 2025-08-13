@@ -53,7 +53,7 @@ function activate(context) {
 				.replace(/^-+|-+$/g, ''); // remove leading/trailing dashes
 
 			try {
-				const res = await axios.post('http://35.164.75.62:8080/semantic/semantic-search', {
+				const res = await axios.post('http://localhost:8000/semantic/semantic-search', {
 					machineId,
 					projectName,
 					query
@@ -197,7 +197,7 @@ function activate(context) {
 				cancellable: false
 			}, async () => {
 				try {
-					await axios.post('http://35.164.75.62:8080/semantic/upload-folder', {
+					await axios.post('http://localhost:8000/semantic/upload-folder', {
 						machineId,
 						projectName,
 						incremental,         // 👈 tell backend this is an upsert
@@ -248,7 +248,7 @@ function activate(context) {
 				cancellable: false
 			}, async () => {
 				try {
-					const res = await axios.post('http://35.164.75.62:8080/semantic/delete-project', {
+					const res = await axios.post('http://localhost:8000/semantic/delete-project', {
 						machineId,
 						projectName
 					});
@@ -335,7 +335,7 @@ class ScraperChatViewProvider {
 					pendingControllers.set(requestId, controller);
 
 					const response = await axios.post(
-						'http://35.164.75.62:8080/chat',
+						'http://localhost:8000/chat',
 						{ prompt: text, image_base64, file_context, selection_text}, // 👈 send it
 						{ signal: controller.signal }
 					);
