@@ -53,12 +53,14 @@ If you wish to run it locally check out the [How to use](https://github.com/Chri
 
 Or simply setup the Dockerfile after cloning the repo through these commands:
 
-- docker build -t scraper-ai:v1.0.0 Dockerfile .
+- docker build -t scraper-ai:v1.0.0 .
 - docker run -p 8080:8080 scraper-ai:v1.0.0
 
 Note: You still have to setup your API keys using a .env file before running your docker container.
 
 ### 2. Frontend Setup
+
+- If you used docker to setup the backend make sure axios makes requests to port 8080 and not 8000 in the frontend. 
 
 #### Downloading dependencies 
 - Change directory to scraper
